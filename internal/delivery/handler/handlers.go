@@ -29,15 +29,15 @@ func NewURLHandler(storage storage.Storage, serverAddr string) *URLHandler {
 func (h *URLHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
-		h.createShortURL(w, r)
+		h.CreateShortURL(w, r)
 	case http.MethodGet:
-		h.redirectURL(w, r)
+		h.RedirectURL(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
+func (h *URLHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -75,7 +75,7 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
+func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" {
 		http.Error(w, "Short key is required", http.StatusBadRequest)
 		return

@@ -105,22 +105,22 @@ func TestURLHandler_createShortURL(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/", bytes.NewBufferString(tt.body))
 			rr := httptest.NewRecorder()
 
-			handler.createShortURL(rr, req)
+			handler.CreateShortURL(rr, req)
 
 			if rr.Code != tt.wantStatus {
-				t.Errorf("createShortURL() status = %v, wantStatus %v", rr.Code, tt.wantStatus)
+				t.Errorf("CreateShortURL() status = %v, wantStatus %v", rr.Code, tt.wantStatus)
 			}
 
 			if tt.wantBodyPrefix != "" {
 				if !strings.HasPrefix(rr.Body.String(), tt.wantBodyPrefix) {
-					t.Errorf("createShortURL() body = %v, want prefix %v", rr.Body.String(), tt.wantBodyPrefix)
+					t.Errorf("CreateShortURL() body = %v, want prefix %v", rr.Body.String(), tt.wantBodyPrefix)
 				}
 			}
 
 			if tt.checkStorage {
 				key := strings.TrimPrefix(rr.Body.String(), "http://localhost:8080/")
 				if _, exists := mockStorage.Get(key); !exists {
-					t.Error("createShortURL() key not saved in storage")
+					t.Error("CreateShortURL() key not saved in storage")
 				}
 			}
 		})
@@ -165,14 +165,14 @@ func TestURLHandler_redirectURL(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			rr := httptest.NewRecorder()
 
-			handler.redirectURL(rr, req)
+			handler.RedirectURL(rr, req)
 
 			if rr.Code != tt.wantStatus {
-				t.Errorf("redirectURL() status = %v, wantStatus %v", rr.Code, tt.wantStatus)
+				t.Errorf("RedirectURL() status = %v, wantStatus %v", rr.Code, tt.wantStatus)
 			}
 
 			if tt.wantLoc != "" && rr.Header().Get("Location") != tt.wantLoc {
-				t.Errorf("redirectURL() Location = %v, want %v", rr.Header().Get("Location"), tt.wantLoc)
+				t.Errorf("RedirectURL() Location = %v, want %v", rr.Header().Get("Location"), tt.wantLoc)
 			}
 		})
 	}
@@ -209,10 +209,10 @@ func TestURLHandler_createShortURL_ReadBodyError(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/", errorReader{})
 	rr := httptest.NewRecorder()
 
-	handler.createShortURL(rr, req)
+	handler.CreateShortURL(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
-		t.Errorf("createShortURL() with body error status = %v, wantStatus %v", rr.Code, http.StatusBadRequest)
+		t.Errorf("CreateShortURL() with body error status = %v, wantStatus %v", rr.Code, http.StatusBadRequest)
 	}
 }
 

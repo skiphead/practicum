@@ -1,14 +1,15 @@
 package delivery
 
-/*
 import (
 	"context"
 	"errors"
-	"github.com/skiphead/practicum/infra/config"
-	handlers "github.com/skiphead/practicum/internal/delivery/handler"
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/skiphead/practicum/infra/config"
+	handlers "github.com/skiphead/practicum/internal/delivery/handler"
 )
 
 type Server struct {
@@ -20,16 +21,18 @@ func NewServer(cfg *config.Config, handler *handlers.URLHandler) (*Server, error
 		return nil, err
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", handler.HandleRequest) // Регистрирует обработчик для всех путей
+	r := chi.NewRouter()
+
+	r.Get("/{key}", handler.RedirectURL) // Register for GET requests
+	r.Post("/", handler.CreateShortURL)  // Register for POST requests, if needed
 
 	return &Server{
 		&http.Server{
-			Addr:         cfg.ServerAddr,   // Адрес сервера из конфигурации
-			Handler:      mux,              // HTTP-роутер
-			ReadTimeout:  15 * time.Second, // Таймаут на чтение запроса
-			WriteTimeout: 15 * time.Second, // Таймаут на запись ответа
-			IdleTimeout:  60 * time.Second, // Таймаут для keep-alive соединений
+			Addr:         cfg.ServerAddr,
+			Handler:      r, // Use the Chi router as the main handler
+			ReadTimeout:  15 * time.Second,
+			WriteTimeout: 15 * time.Second,
+			IdleTimeout:  60 * time.Second,
 		},
 	}, nil
 }
@@ -43,7 +46,6 @@ func (s *Server) Start() <-chan error {
 		}
 		close(serverError)
 	}()
-
 	return serverError
 }
 
@@ -51,8 +53,5 @@ func (s *Server) Shutdown(timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	log.Println("Server is shutting down...")
-
 	return s.Server.Shutdown(ctx)
 }
-
-*/
