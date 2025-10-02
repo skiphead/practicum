@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"github.com/skiphead/practicum/internal/domain/repository"
+	"github.com/skiphead/practicum/pkg/storage"
 	"github.com/skiphead/practicum/pkg/utils"
 	"io"
 	"log"
@@ -15,11 +15,11 @@ const (
 )
 
 type URLHandler struct {
-	storage    repository.Storage
+	storage    storage.Storage
 	serverAddr string
 }
 
-func NewURLHandler(storage repository.Storage, serverAddr string) *URLHandler {
+func NewURLHandler(storage storage.Storage, serverAddr string) *URLHandler {
 	return &URLHandler{
 		storage:    storage,
 		serverAddr: serverAddr,

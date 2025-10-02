@@ -1,6 +1,9 @@
 package config
 
-import "net/netip"
+import (
+	"fmt"
+	"net"
+)
 
 type Config struct {
 	ServerAddr string
@@ -13,8 +16,16 @@ func NewDefaultConfig() *Config {
 }
 
 func (c *Config) Validate() error {
-	if _, err := netip.ParseAddrPort(c.ServerAddr); err != nil {
+	// Checks the format without resolving the hostname
+	host, port, err := net.SplitHostPort(c.ServerAddr)
+	if err != nil {
 		return err
+	}
+	if host == "" {
+		return fmt.Errorf("missing host in address %q", c.ServerAddr)
+	}
+	if port == "" {
+		return fmt.Errorf("missing port in address %q", c.ServerAddr)
 	}
 	return nil
 }

@@ -5,7 +5,7 @@ import (
 	"github.com/skiphead/practicum/internal/config"
 	"github.com/skiphead/practicum/internal/delivery"
 	"github.com/skiphead/practicum/internal/delivery/handler"
-	"github.com/skiphead/practicum/internal/domain/repository"
+	"github.com/skiphead/practicum/pkg/storage"
 	"log"
 	"os"
 	"os/signal"
@@ -15,7 +15,7 @@ import (
 
 func main() {
 	cfg := config.NewDefaultConfig()
-	store := repository.NewMemoryStorage()
+	store := storage.NewMemoryStorage()
 	handler := handlers.NewURLHandler(store, cfg.ServerAddr)
 
 	srv, err := delivery.NewServer(cfg, handler)
