@@ -5,6 +5,8 @@ import (
 	"github.com/skiphead/practicum/infra/config"
 	handlers "github.com/skiphead/practicum/internal/delivery/handler"
 	"github.com/skiphead/practicum/pkg/storage"
+	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 
@@ -16,8 +18,8 @@ const invalidAddr = `invalid-address`
 
 func TestNewServer(t *testing.T) {
 	cfg := &config.Config{ServerAddr: serverAddr}
-	storage := storage.NewMemoryStorage()
-	handler := handlers.NewURLHandler(storage, cfg.ServerAddr)
+	memoryStorage := storage.NewMemoryStorage()
+	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr)
 
 	server, err := NewServer(cfg, handler)
 	if err != nil {
@@ -31,8 +33,8 @@ func TestNewServer(t *testing.T) {
 
 func TestNewServer_InvalidConfig(t *testing.T) {
 	cfg := &config.Config{ServerAddr: invalidAddr}
-	storage := storage.NewMemoryStorage()
-	handler := handlers.NewURLHandler(storage, cfg.ServerAddr)
+	memoryStorage := storage.NewMemoryStorage()
+	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr)
 
 	_, err := NewServer(cfg, handler)
 	if err == nil {
@@ -42,8 +44,8 @@ func TestNewServer_InvalidConfig(t *testing.T) {
 
 func TestServer_Routing(t *testing.T) {
 	cfg := &config.Config{ServerAddr: serverAddr}
-	storage := storage.NewMemoryStorage()
-	handler := handlers.NewURLHandler(storage, cfg.ServerAddr)
+	memoryStorage := storage.NewMemoryStorage()
+	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr)
 
 	server, err := NewServer(cfg, handler)
 	if err != nil {
@@ -59,7 +61,12 @@ func TestServer_Routing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to make POST request: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		errClose := Body.Close()
+		if errClose != nil {
+			log.Printf("Failed to close response body: %v", errClose)
+		}
+	}(resp.Body)
 
 	if resp.StatusCode != http.StatusCreated {
 		t.Errorf("Expected status %d, got %d", http.StatusCreated, resp.StatusCode)

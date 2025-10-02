@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/go-chi/chi/v5"
 	"github.com/skiphead/practicum/pkg/storage"
 	"github.com/skiphead/practicum/pkg/utils"
 	"io"
@@ -29,15 +30,15 @@ func NewURLHandler(storage storage.Storage, serverAddr string) *URLHandler {
 func (h *URLHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
-		h.createShortURL(w, r)
+		h.CreateShortURL(w, r)
 	case http.MethodGet:
-		h.redirectURL(w, r)
+		h.RedirectURL(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
+func (h *URLHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -75,13 +76,14 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/" {
+func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
+	// Get the key from Chi URL parameter instead of parsing the path
+	key := chi.URLParam(r, "key")
+	if key == "" {
 		http.Error(w, "Short key is required", http.StatusBadRequest)
 		return
 	}
 
-	key := r.URL.Path[1:]
 	originalURL, exists := h.storage.Get(key)
 	if !exists {
 		http.Error(w, "Short URL not found", http.StatusNotFound)
@@ -90,8 +92,6 @@ func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Location", originalURL)
 	w.WriteHeader(http.StatusTemporaryRedirect)
-
-	//http.Redirect(w, r, originalURL, http.StatusTemporaryRedirect)
 }
 
 func (h *URLHandler) generateUniqueKey() string {
