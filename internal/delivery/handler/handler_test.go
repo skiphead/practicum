@@ -84,7 +84,7 @@ func TestURLHandler_createShortURL(t *testing.T) {
 		{
 			name:           "Valid URL",
 			body:           "https://google.com",
-			wantStatus:     http.StatusOK,
+			wantStatus:     http.StatusCreated,
 			wantBodyPrefix: "http://localhost:8080/",
 			checkStorage:   true,
 		},

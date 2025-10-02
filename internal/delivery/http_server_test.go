@@ -61,7 +61,7 @@ func TestServer_Routing(t *testing.T) {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		t.Errorf("Expected status %d, got %d", http.StatusOK, resp.StatusCode)
+	if resp.StatusCode != http.StatusCreated {
+		t.Errorf("Expected status %d, got %d", http.StatusCreated, resp.StatusCode)
 	}
 }
