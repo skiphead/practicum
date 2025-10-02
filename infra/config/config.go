@@ -6,7 +6,7 @@ import (
 )
 
 type Config struct {
-	ServerAddr string
+	ServerAddr string `yaml:"server_addr"`
 }
 
 func NewDefaultConfig() *Config {

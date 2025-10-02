@@ -2,7 +2,7 @@ package delivery
 
 import (
 	"bytes"
-	"github.com/skiphead/practicum/internal/config"
+	"github.com/skiphead/practicum/infra/config"
 	handlers "github.com/skiphead/practicum/internal/delivery/handler"
 	"github.com/skiphead/practicum/pkg/storage"
 	"net/http"
@@ -11,8 +11,11 @@ import (
 	"testing"
 )
 
+const serverAddr = `127.0.0.1:8080`
+const invalidAddr = `invalid-address`
+
 func TestNewServer(t *testing.T) {
-	cfg := &config.Config{ServerAddr: "127.0.0.1:8080"}
+	cfg := &config.Config{ServerAddr: serverAddr}
 	storage := storage.NewMemoryStorage()
 	handler := handlers.NewURLHandler(storage, cfg.ServerAddr)
 
@@ -27,7 +30,7 @@ func TestNewServer(t *testing.T) {
 }
 
 func TestNewServer_InvalidConfig(t *testing.T) {
-	cfg := &config.Config{ServerAddr: "invalid-address"}
+	cfg := &config.Config{ServerAddr: invalidAddr}
 	storage := storage.NewMemoryStorage()
 	handler := handlers.NewURLHandler(storage, cfg.ServerAddr)
 
@@ -38,7 +41,7 @@ func TestNewServer_InvalidConfig(t *testing.T) {
 }
 
 func TestServer_Routing(t *testing.T) {
-	cfg := &config.Config{ServerAddr: "127.0.0.1:8080"}
+	cfg := &config.Config{ServerAddr: serverAddr}
 	storage := storage.NewMemoryStorage()
 	handler := handlers.NewURLHandler(storage, cfg.ServerAddr)
 

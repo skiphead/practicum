@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"github.com/skiphead/practicum/internal/config"
+	"github.com/skiphead/practicum/infra/config"
 	"github.com/skiphead/practicum/internal/delivery"
 	"github.com/skiphead/practicum/internal/delivery/handler"
 	"github.com/skiphead/practicum/pkg/storage"
@@ -14,34 +14,39 @@ import (
 )
 
 func main() {
-	cfg := config.NewDefaultConfig()
+	cfg, err := config.LoadConfig("configs/config.yaml")
+	if err != nil {
+		cfg = config.NewDefaultConfig()
+		log.Printf("Не удалось загрузить config.yaml, используется конфигурация по умолчанию: %v", err)
+	}
+
+	if err = cfg.Validate(); err != nil {
+		log.Fatalf("Ошибка валидации конфигурации: %v", err)
+	}
+
 	store := storage.NewMemoryStorage()
 	handler := handlers.NewURLHandler(store, cfg.ServerAddr)
 
 	srv, err := delivery.NewServer(cfg, handler)
 	if err != nil {
-		log.Fatal("Error creating server:", err)
+		log.Fatal("Ошибка создания сервера:", err)
 	}
 
-	// Start the server and listen for errors
 	serverErr := srv.Start()
 
-	// Listen for termination signals
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Block until a signal is received or the server has an error
 	select {
-	case <-ctx.Done(): // A signal was received
-		log.Println("Received shutdown signal")
-	case err = <-serverErr: // The server encountered an error on startup
-		log.Fatalf("Server error: %v", err)
+	case <-ctx.Done():
+		log.Println("Получен сигнал завершения работы")
+	case err = <-serverErr:
+		log.Fatalf("Ошибка сервера: %v", err)
 	}
 
 	if err = srv.Shutdown(10 * time.Second); err != nil {
-		log.Printf("Server shutdown error: %v", err)
-		// If shutdown fails, you might want to force close
+		log.Printf("Ошибка завершения работы сервера: %v", err)
 	}
 
-	log.Println("Server exited properly")
+	log.Println("Сервер завершил работу корректно")
 }
