@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"github.com/go-chi/chi/v5"
 	"github.com/skiphead/practicum/pkg/storage"
 	"github.com/skiphead/practicum/pkg/utils"
 	"io"
@@ -77,13 +76,12 @@ func (h *URLHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
-	// Get the key from Chi URL parameter instead of parsing the path
-	key := chi.URLParam(r, "key")
-	if key == "" {
+	if r.URL.Path == "/" {
 		http.Error(w, "Short key is required", http.StatusBadRequest)
 		return
 	}
 
+	key := r.URL.Path[1:]
 	originalURL, exists := h.storage.Get(key)
 	if !exists {
 		http.Error(w, "Short URL not found", http.StatusNotFound)
@@ -92,6 +90,8 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Location", originalURL)
 	w.WriteHeader(http.StatusTemporaryRedirect)
+
+	//http.Redirect(w, r, originalURL, http.StatusTemporaryRedirect)
 }
 
 func (h *URLHandler) generateUniqueKey() string {
