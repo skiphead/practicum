@@ -66,10 +66,13 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 
 	response := "http://" + h.serverAddr + "/" + key
 
+	w.WriteHeader(http.StatusCreated)
+
 	_, err = w.Write([]byte(response))
 	if err != nil {
 		return
 	}
+
 }
 
 func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +88,10 @@ func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, originalURL, http.StatusTemporaryRedirect)
+	w.Header().Set("Location", originalURL)
+	w.WriteHeader(http.StatusTemporaryRedirect)
+
+	//http.Redirect(w, r, originalURL, http.StatusTemporaryRedirect)
 }
 
 func (h *URLHandler) generateUniqueKey() string {
