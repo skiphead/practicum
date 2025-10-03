@@ -10,7 +10,7 @@ import (
 func LoadConfig(configPath string) (*Config, error) {
 	config := &Config{}
 
-	flag.StringVar(&config.ServerAddr, "a", "127.0.0.1:8080", "Порт для запуска сервера")
+	flag.StringVar(&config.ServerAddr, "a", "localhost:8080", "Порт для запуска сервера")
 	flag.StringVar(&config.BaseURL, "b", "", "Базовый адрес результирующего сокращённого URL (например: http://localhost:8000/qsd54gFg)")
 	flag.Parse()
 
