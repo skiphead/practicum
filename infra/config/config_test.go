@@ -7,8 +7,8 @@ import (
 func TestNewDefaultConfig(t *testing.T) {
 	cfg := NewDefaultConfig()
 
-	if cfg.ServerAddr != "127.0.0.1:8080" {
-		t.Errorf("Expected ServerAddr '127.0.0.1:8080', got '%s'", cfg.ServerAddr)
+	if cfg.ServerAddr != "localhost:8080" {
+		t.Errorf("Expected ServerAddr 'localhost:8080', got '%s'", cfg.ServerAddr)
 	}
 }
 
@@ -18,9 +18,9 @@ func TestConfig_Validate(t *testing.T) {
 		addr    string
 		wantErr bool
 	}{
-		{"valid address", "127.0.0.1:8080", false},
+		{"valid address", "localhost:8080", false},
 		{"valid address with different port", "localhost:3000", false},
-		{"invalid address - no port", "127.0.0.1", true},
+		{"invalid address - no port", "localhost", true},
 		{"invalid address - bad format", "invalid-address", true},
 		{"empty address", "", true},
 	}
