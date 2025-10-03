@@ -7,11 +7,13 @@ import (
 
 type Config struct {
 	ServerAddr string `yaml:"server_addr"`
+	BaseURL    string `yaml:"base_url"`
 }
 
 func NewDefaultConfig() *Config {
+
 	return &Config{
-		ServerAddr: "127.0.0.1:8080",
+		ServerAddr: "localhost:8080",
 	}
 }
 
