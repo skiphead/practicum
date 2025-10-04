@@ -23,13 +23,13 @@ func NewServer(cfg *config.Config, handler *handlers.URLHandler) (*Server, error
 
 	r := chi.NewRouter()
 
-	r.Get("/{key}", handler.RedirectURL) // Register for GET requests
-	r.Post("/", handler.CreateShortURL)  // Register for POST requests, if needed
+	r.Get("/{key}", handler.RedirectURL)
+	r.Post("/", handler.CreateShortURL)
 
 	return &Server{
 		&http.Server{
 			Addr:         cfg.ServerAddr,
-			Handler:      r, // Use the Chi router as the main handler
+			Handler:      r,
 			ReadTimeout:  15 * time.Second,
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,

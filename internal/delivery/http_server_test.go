@@ -35,36 +35,3 @@ func TestNewServer_InvalidConfig(t *testing.T) {
 		t.Error("Expected error for invalid config, got nil")
 	}
 }
-
-/*
-func TestServer_Routing(t *testing.T) {
-	cfg := &config.Config{ServerAddr: serverAddr}
-	memoryStorage := storage.NewMemoryStorage()
-	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr)
-
-	server, err := NewServer(cfg, handler)
-	if err != nil {
-		t.Fatalf("Failed to create server: %v", err)
-	}
-
-	// Test server routing with a test request
-	testServer := httptest.NewServer(server.Handler)
-	defer testServer.Close()
-
-	// Test POST request
-	resp, err := http.Post(testServer.URL, "text/plain", bytes.NewBufferString("https://example.com"))
-	if err != nil {
-		t.Fatalf("Failed to make POST request: %v", err)
-	}
-	defer func(Body io.ReadCloser) {
-		errClose := Body.Close()
-		if errClose != nil {
-			log.Printf("Failed to close response body: %v", errClose)
-		}
-	}(resp.Body)
-
-	if resp.StatusCode != http.StatusCreated {
-		t.Errorf("Expected status %d, got %d", http.StatusCreated, resp.StatusCode)
-	}
-}
-*/
