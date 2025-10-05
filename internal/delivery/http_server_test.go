@@ -15,7 +15,7 @@ func TestNewServer(t *testing.T) {
 	memoryStorage := storage.NewMemoryStorage()
 	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr)
 
-	server, err := NewServer(cfg, handler)
+	server, err := NewServerChi(cfg, handler.ChiMux())
 	if err != nil {
 		t.Fatalf("Failed to create server: %v", err)
 	}
@@ -30,7 +30,7 @@ func TestNewServer_InvalidConfig(t *testing.T) {
 	memoryStorage := storage.NewMemoryStorage()
 	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr)
 
-	_, err := NewServer(cfg, handler)
+	_, err := NewServerChi(cfg, handler.ChiMux())
 	if err == nil {
 		t.Error("Expected error for invalid config, got nil")
 	}

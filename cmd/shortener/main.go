@@ -27,9 +27,9 @@ func main() {
 	store := storage.NewMemoryStorage()
 	handler := handlers.NewURLHandler(store, cfg.ServerAddr)
 
-	srv, err := delivery.NewServer(cfg, handler)
-	if err != nil {
-		log.Fatal("Ошибка создания сервера:", err)
+	srv, errNewServe := delivery.NewServerChi(cfg, handler.ChiMux())
+	if errNewServe != nil {
+		log.Fatal("Ошибка создания сервера:", errNewServe)
 	}
 
 	serverErr := srv.Start()

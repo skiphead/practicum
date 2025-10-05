@@ -27,11 +27,18 @@ func NewURLHandler(storage storage.Storage, serverAddr string) *URLHandler {
 	}
 }
 
-func (h *URLHandler) Routes() *chi.Mux {
+func (h *URLHandler) ChiMux() *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Get("/{key}", h.redirectURL)
 	r.Post("/", h.createShortURL)
+
+	return r
+}
+
+func (h *URLHandler) ServeMUX() *http.ServeMux {
+	r := http.NewServeMux()
+	r.HandleFunc("/", h.HandleRequest) // Регистрирует обработчик для всех путей
 
 	return r
 }

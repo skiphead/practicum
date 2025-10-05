@@ -1,27 +1,40 @@
 package delivery
 
-/*
 import (
 	"context"
 	"errors"
-	"github.com/skiphead/practicum/infra/config"
-	handlers "github.com/skiphead/practicum/internal/delivery/handler"
+	"github.com/go-chi/chi/v5"
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/skiphead/practicum/infra/config"
 )
 
 type Server struct {
 	*http.Server
 }
 
-func NewServer(cfg *config.Config, handler *handlers.URLHandler) (*Server, error) {
+func NewServerChi(cfg *config.Config, mux *chi.Mux) (*Server, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", handler.HandleRequest) // Регистрирует обработчик для всех путей
+	return &Server{
+		&http.Server{
+			Addr:         cfg.ServerAddr,
+			Handler:      mux,
+			ReadTimeout:  15 * time.Second,
+			WriteTimeout: 15 * time.Second,
+			IdleTimeout:  60 * time.Second,
+		},
+	}, nil
+}
+
+func NewNativeServer(cfg *config.Config, mux *http.ServeMux) (*Server, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 
 	return &Server{
 		&http.Server{
@@ -43,7 +56,6 @@ func (s *Server) Start() <-chan error {
 		}
 		close(serverError)
 	}()
-
 	return serverError
 }
 
@@ -51,8 +63,5 @@ func (s *Server) Shutdown(timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	log.Println("Server is shutting down...")
-
 	return s.Server.Shutdown(ctx)
 }
-
-*/
