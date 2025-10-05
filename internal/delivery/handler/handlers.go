@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"github.com/go-chi/chi/v5"
 	"github.com/skiphead/practicum/pkg/storage"
 	"github.com/skiphead/practicum/pkg/utils"
 	"io"
@@ -26,18 +27,27 @@ func NewURLHandler(storage storage.Storage, serverAddr string) *URLHandler {
 	}
 }
 
+func (h *URLHandler) Routes() *chi.Mux {
+	r := chi.NewRouter()
+
+	r.Get("/{key}", h.redirectURL)
+	r.Post("/", h.createShortURL)
+
+	return r
+}
+
 func (h *URLHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
-		h.CreateShortURL(w, r)
+		h.createShortURL(w, r)
 	case http.MethodGet:
-		h.RedirectURL(w, r)
+		h.redirectURL(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
-func (h *URLHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
+func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -75,7 +85,7 @@ func (h *URLHandler) CreateShortURL(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
+func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" {
 		http.Error(w, "Short key is required", http.StatusBadRequest)
 		return
