@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/skiphead/practicum/infra/config"
 	handlers "github.com/skiphead/practicum/internal/delivery/handler"
 )
@@ -21,15 +20,10 @@ func NewServer(cfg *config.Config, handler *handlers.URLHandler) (*Server, error
 		return nil, err
 	}
 
-	r := chi.NewRouter()
-
-	r.Get("/{key}", handler.RedirectURL) // Register for GET requests
-	r.Post("/", handler.CreateShortURL)  // Register for POST requests, if needed
-
 	return &Server{
 		&http.Server{
 			Addr:         cfg.ServerAddr,
-			Handler:      r, // Use the Chi router as the main handler
+			Handler:      handler.Routes(),
 			ReadTimeout:  15 * time.Second,
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,
