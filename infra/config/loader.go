@@ -14,6 +14,13 @@ func LoadConfig(configPath string) (*Config, error) {
 	flag.StringVar(&config.BaseURL, "b", "", "Базовый адрес результирующего сокращённого URL (например: http://localhost:8000/qsd54gFg)")
 	flag.Parse()
 
+	if envBaseURL := os.Getenv("BASE_URL"); envBaseURL != "" {
+		config.BaseURL = envBaseURL
+	}
+	if envServerAddr := os.Getenv("SERVER_ADDRESS"); envServerAddr != "" {
+		config.ServerAddr = envServerAddr
+	}
+
 	// Если порт передан аргументом, он имеет высший приоритет и перезаписывает конфиг
 	if config.ServerAddr != "" {
 		return config, nil

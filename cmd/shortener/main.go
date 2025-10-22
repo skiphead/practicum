@@ -25,7 +25,7 @@ func main() {
 	}
 
 	store := storage.NewMemoryStorage()
-	handler := handlers.NewURLHandler(store, cfg.ServerAddr)
+	handler := handlers.NewURLHandler(store, cfg.ServerAddr, cfg.BaseURL)
 
 	srv, errNewServe := delivery.NewServerChi(cfg, handler.ChiMux())
 	if errNewServe != nil {

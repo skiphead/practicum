@@ -21,7 +21,7 @@ func (c *Config) Validate() error {
 	// Checks the format without resolving the hostname
 	host, port, err := net.SplitHostPort(c.ServerAddr)
 	if err != nil {
-		return err
+		return fmt.Errorf("error parsing server address: %w", err)
 	}
 	if host == "" {
 		return fmt.Errorf("missing host in address %q", c.ServerAddr)

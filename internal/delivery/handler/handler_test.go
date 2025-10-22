@@ -37,7 +37,7 @@ func (m *MockErrorStorage) Get(key string) (string, bool) {
 }
 
 func TestURLHandler_HandleRequest(t *testing.T) {
-	handler := NewURLHandler(NewMockStorage(), "localhost:8080")
+	handler := NewURLHandler(NewMockStorage(), "localhost:8080", "")
 
 	tests := []struct {
 		name       string
@@ -72,7 +72,7 @@ func TestURLHandler_HandleRequest(t *testing.T) {
 
 func TestURLHandler_createShortURL(t *testing.T) {
 	mockStorage := NewMockStorage()
-	handler := NewURLHandler(mockStorage, "localhost:8080")
+	handler := NewURLHandler(mockStorage, "localhost:8080", "")
 
 	tests := []struct {
 		name           string
@@ -129,7 +129,7 @@ func TestURLHandler_createShortURL(t *testing.T) {
 
 func TestURLHandler_redirectURL(t *testing.T) {
 	mockStorage := NewMockStorage()
-	handler := NewURLHandler(mockStorage, "localhost:8080")
+	handler := NewURLHandler(mockStorage, "localhost:8080", "")
 
 	// Предварительно сохраним тестовый URL
 	key := "abc123"
@@ -180,7 +180,7 @@ func TestURLHandler_redirectURL(t *testing.T) {
 
 func TestURLHandler_generateUniqueKey(t *testing.T) {
 	mockStorage := NewMockStorage()
-	handler := NewURLHandler(mockStorage, "localhost:8080")
+	handler := NewURLHandler(mockStorage, "localhost:8080", "")
 
 	// Тестируем уникальность ключа
 	key1 := handler.generateUniqueKey()
@@ -203,7 +203,7 @@ func TestURLHandler_generateUniqueKey(t *testing.T) {
 }
 
 func TestURLHandler_createShortURL_ReadBodyError(t *testing.T) {
-	handler := NewURLHandler(NewMockStorage(), "localhost:8080")
+	handler := NewURLHandler(NewMockStorage(), "localhost:8080", "")
 
 	// Создаем запрос с ошибкой при чтении тела
 	req := httptest.NewRequest(http.MethodPost, "/", errorReader{})

@@ -18,12 +18,14 @@ const (
 type URLHandler struct {
 	storage    storage.Storage
 	serverAddr string
+	baseURL    string
 }
 
-func NewURLHandler(storage storage.Storage, serverAddr string) *URLHandler {
+func NewURLHandler(storage storage.Storage, serverAddr, baseURL string) *URLHandler {
 	return &URLHandler{
 		storage:    storage,
 		serverAddr: serverAddr,
+		baseURL:    baseURL,
 	}
 }
 
@@ -77,8 +79,10 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid URL", http.StatusBadRequest)
 		return
 	}
-
-	key := h.generateUniqueKey()
+	key := h.baseURL
+	if key == "" {
+		key = h.generateUniqueKey()
+	}
 	h.storage.Save(key, originalURL)
 
 	response := "http://" + h.serverAddr + "/" + key
