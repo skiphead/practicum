@@ -2,38 +2,41 @@ package config
 
 import (
 	"flag"
+	"fmt"
 	"gopkg.in/yaml.v3"
 	"os"
 )
 
-// LoadConfig загружает конфигурацию из YAML-файла
 func LoadConfig(configPath string) (*Config, error) {
 	config := &Config{}
 
-	flag.StringVar(&config.ServerAddr, "a", "localhost:8080", "Порт для запуска сервера")
-	flag.StringVar(&config.BaseURL, "b", "", "Базовый адрес результирующего сокращённого URL (например: http://localhost:8000/qsd54gFg)")
+	if data, err := os.ReadFile(configPath); err == nil {
+		if err = yaml.Unmarshal(data, config); err != nil {
+			return nil, fmt.Errorf("ошибка парсинга YAML: %w", err)
+		}
+	}
+
+	var flagServerAddr, flagBaseURL string
+	flag.StringVar(&flagServerAddr, "a", "", "Порт для запуска сервера")
+	flag.StringVar(&flagBaseURL, "b", "", "Базовый адрес результирующего сокращённого URL")
 	flag.Parse()
 
-	if envBaseURL := os.Getenv("BASE_URL"); envBaseURL != "" {
-		config.BaseURL = envBaseURL
+	if flagServerAddr != "" {
+		config.ServerAddr = flagServerAddr
 	}
-	if envServerAddr := os.Getenv("SERVER_ADDRESS"); envServerAddr != "" {
-		config.ServerAddr = envServerAddr
-	}
-
-	// Если порт передан аргументом, он имеет высший приоритет и перезаписывает конфиг
-	if config.ServerAddr != "" {
-		return config, nil
+	if flagBaseURL != "" {
+		config.BaseURL = flagBaseURL
 	}
 
-	file, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, err
+	if env := os.Getenv("BASE_URL"); env != "" {
+		config.BaseURL = env
+	}
+	if env := os.Getenv("SERVER_ADDRESS"); env != "" {
+		config.ServerAddr = env
 	}
 
-	err = yaml.Unmarshal(file, config)
-	if err != nil {
-		return nil, err
+	if config.ServerAddr == "" {
+		config.ServerAddr = "localhost:8080"
 	}
 
 	return config, nil
