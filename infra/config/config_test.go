@@ -72,7 +72,10 @@ func TestGetEnvLoadConfig(t *testing.T) {
 
 	key := "SERVER_ADDRESS"
 	value := "localhost:8082"
-	os.Setenv(key, value)
+	errSetEnv := os.Setenv(key, value)
+	if errSetEnv != nil {
+		t.Error("Error setting environment variable", errSetEnv)
+	}
 	defer os.Unsetenv(key)
 
 	cfg, err := LoadConfig("configs/config.yaml")
