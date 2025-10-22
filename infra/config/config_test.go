@@ -50,7 +50,7 @@ func TestConfig_Validate(t *testing.T) {
 			name:    "malformed address (no colon)",
 			cfg:     &Config{ServerAddr: "localhost8080"},
 			wantErr: true,
-			errText: "address localhost8080: missing port in address",
+			errText: "error parsing server address: address localhost8080: missing port in address",
 		},
 	}
 

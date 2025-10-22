@@ -13,7 +13,7 @@ const invalidAddr = `invalid-address`
 func TestNewServer(t *testing.T) {
 	cfg := &config.Config{ServerAddr: serverAddr}
 	memoryStorage := storage.NewMemoryStorage()
-	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr)
+	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr, "")
 
 	server, err := NewServerChi(cfg, handler.ChiMux())
 	if err != nil {
@@ -28,7 +28,7 @@ func TestNewServer(t *testing.T) {
 func TestNewServer_InvalidConfig(t *testing.T) {
 	cfg := &config.Config{ServerAddr: invalidAddr}
 	memoryStorage := storage.NewMemoryStorage()
-	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr)
+	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr, "")
 
 	_, err := NewServerChi(cfg, handler.ChiMux())
 	if err == nil {
