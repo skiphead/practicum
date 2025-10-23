@@ -378,7 +378,7 @@ func TestURLValidation(t *testing.T) {
 			body, _ := json.Marshal(map[string]string{"url": tt.url})
 			req := httptest.NewRequest("POST", "/api/shorten", bytes.NewReader(body))
 			rr := httptest.NewRecorder()
-
+			rr.Header().Set("Content-Type", "application/json")
 			handler.createShortAPIURL(rr, req)
 
 			if tt.valid {
