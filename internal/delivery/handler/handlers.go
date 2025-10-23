@@ -43,7 +43,7 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 	r.Use(render.SetContentType(render.ContentTypeJSON))
 	r.Get("/{key}", h.redirectURL)
 	r.Post("/", h.createShortURL)
-	r.Post("/api", h.createShortAPIURL)
+	r.Post("/api/shorten", h.createShortAPIURL)
 
 	return r
 }
