@@ -65,7 +65,7 @@ func (h *URLHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
 func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		http.Error(w, "URL is required", http.StatusBadRequest)
 		return
 	}
 	defer func(Body io.ReadCloser) {
@@ -88,7 +88,7 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !utils.IsValidURL(originalURL) {
-		http.Error(w, "Invalid URL", http.StatusBadRequest)
+		http.Error(w, "URL is required", http.StatusBadRequest)
 		return
 	}
 
