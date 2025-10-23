@@ -3,12 +3,15 @@ package handlers
 import (
 	"fmt"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/skiphead/practicum/pkg/storage"
 	"github.com/skiphead/practicum/pkg/utils"
+	"go.uber.org/zap"
 	"io"
 	"log"
 	"math/rand"
 	"net/http"
+	"time"
 )
 
 const (
@@ -32,7 +35,7 @@ func NewURLHandler(storage storage.Storage, serverAddr, baseURL string) *URLHand
 
 func (h *URLHandler) ChiMux() *chi.Mux {
 	r := chi.NewRouter()
-
+	r.Use(LoggerMiddleware)
 	r.Get("/{key}", h.redirectURL)
 	r.Post("/", h.createShortURL)
 
@@ -101,6 +104,7 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
+
 	if r.URL.Path == "/" {
 		http.Error(w, "Short key is required", http.StatusBadRequest)
 		return
@@ -134,4 +138,28 @@ func (h *URLHandler) generateRandomKey() string {
 		buf[i] = randomCharset[rand.Intn(len(randomCharset))]
 	}
 	return string(buf)
+}
+
+func LoggerMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+
+		next.ServeHTTP(ww, r)
+
+		duration := time.Since(start)
+
+		//Запрос
+		zap.L().Info("msg",
+			zap.String("path", r.URL.Path),
+			zap.String("method", r.Method),
+			zap.Duration("duration", duration))
+
+		//Ответ
+		zap.L().Info("msg",
+			zap.Int("status", ww.Status()),
+			zap.Int("bytes", ww.BytesWritten()))
+
+	})
 }
