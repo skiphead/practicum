@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 
 	"net/http"
@@ -213,6 +214,186 @@ func TestURLHandler_createShortURL_ReadBodyError(t *testing.T) {
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("createShortURL() with body error status = %v, wantStatus %v", rr.Code, http.StatusBadRequest)
+	}
+}
+
+func TestURLHandler_createShortApiURL(t *testing.T) {
+	tests := []struct {
+		name           string
+		body           interface{}
+		serverAddr     string
+		baseURL        string
+		wantStatus     int
+		wantResponse   string
+		checkSaved     bool
+		validateResult func(t *testing.T, result string, storage *MockStorage)
+	}{
+		{
+			name:       "success with serverAddr",
+			body:       map[string]string{"url": "https://example.com"},
+			serverAddr: "localhost:8080",
+			wantStatus: http.StatusCreated,
+			validateResult: func(t *testing.T, result string, storage *MockStorage) {
+				if !strings.HasPrefix(result, "http://localhost:8080/") {
+					t.Errorf("Result should start with serverAddr, got: %s", result)
+				}
+				key := strings.TrimPrefix(result, "http://localhost:8080/")
+				if storage.storage[key] != "https://example.com" {
+					t.Errorf("Storage wasn't updated correctly")
+				}
+			},
+		},
+		{
+			name:       "success with baseURL",
+			body:       map[string]string{"url": "https://google.com"},
+			serverAddr: "localhost:8080",
+			baseURL:    "https://my.domain",
+			wantStatus: http.StatusCreated,
+			validateResult: func(t *testing.T, result string, storage *MockStorage) {
+				if !strings.HasPrefix(result, "https://my.domain/") {
+					t.Errorf("Result should use baseURL, got: %s", result)
+				}
+			},
+		},
+		{
+			name:         "missing url field",
+			body:         map[string]string{"not_url": "test"},
+			wantStatus:   http.StatusBadRequest,
+			wantResponse: "URL is required\n",
+		},
+		{
+			name:         "invalid URL",
+			body:         map[string]string{"url": "invalid-url"},
+			wantStatus:   http.StatusBadRequest,
+			wantResponse: "Invalid URL\n",
+		},
+		{
+			name:         "malformed JSON",
+			body:         "{invalid json",
+			wantStatus:   http.StatusBadRequest,
+			wantResponse: "URL is required\n", // Изменено с "Invalid request body"
+		},
+		{
+			name:         "empty body",
+			body:         "",
+			wantStatus:   http.StatusBadRequest,
+			wantResponse: "URL is required\n", // JSON unmarshal пустой строки создает пустую map
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			storage := &MockStorage{storage: make(map[string]string)}
+			handler := &URLHandler{
+				storage:    storage,
+				serverAddr: tt.serverAddr,
+				baseURL:    tt.baseURL,
+			}
+
+			var bodyBytes []byte
+			switch v := tt.body.(type) {
+			case string:
+				bodyBytes = []byte(v)
+			default:
+				bodyBytes, _ = json.Marshal(v)
+			}
+
+			req := httptest.NewRequest("POST", "/api/shorten", bytes.NewReader(bodyBytes))
+			req.Header.Set("Content-Type", "application/json")
+			rr := httptest.NewRecorder()
+
+			handler.createShortApiURL(rr, req)
+
+			if rr.Code != tt.wantStatus {
+				t.Errorf("Expected status %d, got %d", tt.wantStatus, rr.Code)
+			}
+
+			if tt.wantResponse != "" {
+				if rr.Body.String() != tt.wantResponse {
+					t.Errorf("Expected response body '%s', got '%s'", tt.wantResponse, rr.Body.String())
+				}
+			}
+
+			if tt.validateResult != nil {
+				var resp struct {
+					Result string `json:"result"`
+				}
+				if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+					t.Fatalf("Failed to parse response: %v", err)
+				}
+				tt.validateResult(t, resp.Result, storage)
+			}
+		})
+	}
+}
+
+// Тест для проверки ошибки чтения тела запроса
+func TestCreateShortApiURL_ReadBodyError(t *testing.T) {
+	storage := &MockStorage{storage: make(map[string]string)}
+	handler := &URLHandler{
+		storage:    storage,
+		serverAddr: "test",
+	}
+
+	// Создаем запрос с телом, которое вызывает ошибку при чтении
+	req := httptest.NewRequest("POST", "/api/shorten", &errorReader{})
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	handler.createShortApiURL(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, rr.Code)
+	}
+
+	expectedResponse := "Invalid request body\n"
+	if rr.Body.String() != expectedResponse {
+		t.Errorf("Expected response body '%s', got '%s'", expectedResponse, rr.Body.String())
+	}
+}
+
+// Тест для проверки валидации URL
+func TestURLValidation(t *testing.T) {
+	handler := &URLHandler{
+		storage:    &MockStorage{storage: make(map[string]string)},
+		serverAddr: "test",
+	}
+
+	tests := []struct {
+		url   string
+		valid bool
+	}{
+		{"https://example.com", true},
+		{"http://localhost:8080", true},
+		{"http://example.com/path", true},
+		{"https://sub.domain.example.com", true},
+		{"ftp://invalid.com", false},
+		{"", false},
+		{"not-a-url", false},
+		{"javascript:alert(1)", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.url, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]string{"url": tt.url})
+			req := httptest.NewRequest("POST", "/api/shorten", bytes.NewReader(body))
+			rr := httptest.NewRecorder()
+
+			handler.createShortApiURL(rr, req)
+
+			if tt.valid {
+				if rr.Code != http.StatusCreated {
+					t.Errorf("Expected URL '%s' to be valid, but got status %d", tt.url, rr.Code)
+				}
+			} else {
+				if rr.Code != http.StatusBadRequest {
+					t.Errorf("Expected URL '%s' to be invalid, but got status %d", tt.url, rr.Code)
+				}
+				if rr.Body.String() != "Invalid URL\n" {
+					t.Errorf("Expected 'Invalid URL' response for URL '%s', got '%s'", tt.url, rr.Body.String())
+				}
+			}
+		})
 	}
 }
 

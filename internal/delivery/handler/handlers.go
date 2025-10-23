@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -38,6 +39,7 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 	r.Use(LoggerMiddleware)
 	r.Get("/{key}", h.redirectURL)
 	r.Post("/", h.createShortURL)
+	r.Post("/api", h.createShortApiURL)
 
 	return r
 }
@@ -57,6 +59,51 @@ func (h *URLHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
 		h.redirectURL(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (h *URLHandler) createShortApiURL(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	defer func(Body io.ReadCloser) {
+		errClose := Body.Close()
+		if errClose != nil {
+			log.Printf("error close Body create short url: %v", errClose)
+		}
+	}(r.Body)
+	var m map[string]string
+	err = json.Unmarshal(body, &m)
+	originalURL, ok := m["url"]
+	if !ok {
+		http.Error(w, "URL is required", http.StatusBadRequest)
+		return
+	}
+
+	if !utils.IsValidURL(originalURL) {
+		http.Error(w, "Invalid URL", http.StatusBadRequest)
+		return
+	}
+
+	key := h.generateUniqueKey()
+
+	h.storage.Save(key, originalURL)
+
+	baseURL := fmt.Sprintf("http://%s/%s", h.serverAddr, key)
+
+	if h.baseURL != "" {
+		baseURL = fmt.Sprintf("%s/%s", h.baseURL, key)
+	}
+
+	w.WriteHeader(http.StatusCreated)
+
+	resp, err := json.Marshal(map[string]string{"result": baseURL})
+
+	_, err = w.Write(resp)
+	if err != nil {
+		return
 	}
 }
 
