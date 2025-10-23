@@ -302,7 +302,7 @@ func TestURLHandler_createShortApiURL(t *testing.T) {
 			req.Header.Set("Content-Type", "application/json")
 			rr := httptest.NewRecorder()
 
-			handler.createShortApiURL(rr, req)
+			handler.createShortAPIURL(rr, req)
 
 			if rr.Code != tt.wantStatus {
 				t.Errorf("Expected status %d, got %d", tt.wantStatus, rr.Code)
@@ -340,7 +340,7 @@ func TestCreateShortApiURL_ReadBodyError(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	rr := httptest.NewRecorder()
 
-	handler.createShortApiURL(rr, req)
+	handler.createShortAPIURL(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Errorf("Expected status %d, got %d", http.StatusBadRequest, rr.Code)
@@ -379,7 +379,7 @@ func TestURLValidation(t *testing.T) {
 			req := httptest.NewRequest("POST", "/api/shorten", bytes.NewReader(body))
 			rr := httptest.NewRecorder()
 
-			handler.createShortApiURL(rr, req)
+			handler.createShortAPIURL(rr, req)
 
 			if tt.valid {
 				if rr.Code != http.StatusCreated {

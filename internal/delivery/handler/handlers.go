@@ -39,7 +39,7 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 	r.Use(LoggerMiddleware)
 	r.Get("/{key}", h.redirectURL)
 	r.Post("/", h.createShortURL)
-	r.Post("/api", h.createShortApiURL)
+	r.Post("/api", h.createShortAPIURL)
 
 	return r
 }
@@ -62,7 +62,7 @@ func (h *URLHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *URLHandler) createShortApiURL(w http.ResponseWriter, r *http.Request) {
+func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -75,7 +75,12 @@ func (h *URLHandler) createShortApiURL(w http.ResponseWriter, r *http.Request) {
 		}
 	}(r.Body)
 	var m map[string]string
-	err = json.Unmarshal(body, &m)
+	errUnmarshal := json.Unmarshal(body, &m)
+	if errUnmarshal != nil {
+		zap.L().Error("unmarshal error", zap.Error(errUnmarshal))
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
 	originalURL, ok := m["url"]
 	if !ok {
 		http.Error(w, "URL is required", http.StatusBadRequest)
@@ -96,11 +101,14 @@ func (h *URLHandler) createShortApiURL(w http.ResponseWriter, r *http.Request) {
 	if h.baseURL != "" {
 		baseURL = fmt.Sprintf("%s/%s", h.baseURL, key)
 	}
+	resp, errMarshal := json.Marshal(map[string]string{"result": baseURL})
+	if errMarshal != nil {
+		zap.L().Error("marshal error", zap.Error(errMarshal))
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
 
 	w.WriteHeader(http.StatusCreated)
-
-	resp, err := json.Marshal(map[string]string{"result": baseURL})
-
 	_, err = w.Write(resp)
 	if err != nil {
 		return
