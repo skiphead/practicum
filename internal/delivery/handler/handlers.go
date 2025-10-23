@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/render"
 	"github.com/skiphead/practicum/pkg/storage"
 	"github.com/skiphead/practicum/pkg/utils"
 	"go.uber.org/zap"
@@ -39,6 +40,7 @@ func NewURLHandler(storage storage.Storage, serverAddr, baseURL string) *URLHand
 func (h *URLHandler) ChiMux() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(LoggerMiddleware)
+	r.Use(render.SetContentType(render.ContentTypeJSON))
 	r.Get("/{key}", h.redirectURL)
 	r.Post("/", h.createShortURL)
 	r.Post("/api", h.createShortAPIURL)
@@ -65,6 +67,12 @@ func (h *URLHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
+	contentType := r.Header.Get("Content-Type")
+	if contentType != "application/json" {
+		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+		return
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -76,6 +84,7 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 			log.Printf("error close Body create short url: %v", errClose)
 		}
 	}(r.Body)
+
 	var m map[string]string
 	errUnmarshal := json.Unmarshal(body, &m)
 	if errUnmarshal != nil {
@@ -83,6 +92,7 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "URL is required", http.StatusBadRequest)
 		return
 	}
+
 	originalURL, ok := m["url"]
 	if !ok {
 		http.Error(w, "URL is required", http.StatusBadRequest)
@@ -114,23 +124,15 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 
 	h.storage.Save(key, originalURL)
 
-	baseURL := fmt.Sprintf("http://%s/%s", h.serverAddr, key)
+	shortURL := fmt.Sprintf("http://%s/%s", h.serverAddr, key)
 
 	if h.baseURL != "" {
-		baseURL = fmt.Sprintf("%s/%s", h.baseURL, key)
-	}
-	resp, errMarshal := json.Marshal(map[string]string{"result": baseURL})
-	if errMarshal != nil {
-		zap.L().Error("marshal error", zap.Error(errMarshal))
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
+		shortURL = fmt.Sprintf("%s/%s", h.baseURL, key)
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	_, err = w.Write(resp)
-	if err != nil {
-		return
-	}
+
+	render.JSON(w, r, map[string]string{"result": shortURL})
 }
 
 func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
