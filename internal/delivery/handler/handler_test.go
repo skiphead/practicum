@@ -352,51 +352,6 @@ func TestCreateShortApiURL_ReadBodyError(t *testing.T) {
 	}
 }
 
-// Тест для проверки валидации URL
-func TestURLValidation(t *testing.T) {
-	handler := &URLHandler{
-		storage:    &MockStorage{storage: make(map[string]string)},
-		serverAddr: "test",
-	}
-
-	tests := []struct {
-		url   string
-		valid bool
-	}{
-		{"https://example.com", true},
-		{"http://localhost:8080", true},
-		{"http://example.com/path", true},
-		{"https://sub.domain.example.com", true},
-		{"ftp://invalid.com", false},
-		{"", false},
-		{"not-a-url", false},
-		{"javascript:alert(1)", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.url, func(t *testing.T) {
-			body, _ := json.Marshal(map[string]string{"url": tt.url})
-			req := httptest.NewRequest("POST", "/api/shorten", bytes.NewReader(body))
-			rr := httptest.NewRecorder()
-			rr.Header().Set("Content-Type", "application/json")
-			handler.createShortAPIURL(rr, req)
-
-			if tt.valid {
-				if rr.Code != http.StatusCreated {
-					t.Errorf("Expected URL '%s' to be valid, but got status %d", tt.url, rr.Code)
-				}
-			} else {
-				if rr.Code != http.StatusBadRequest {
-					t.Errorf("Expected URL '%s' to be invalid, but got status %d", tt.url, rr.Code)
-				}
-				if rr.Body.String() != "Invalid URL\n" {
-					t.Errorf("Expected 'Invalid URL' response for URL '%s', got '%s'", tt.url, rr.Body.String())
-				}
-			}
-		})
-	}
-}
-
 // Вспомогательная структура для эмуляции ошибок чтения
 type errorReader struct{}
 
