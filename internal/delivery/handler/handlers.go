@@ -12,6 +12,8 @@ import (
 	"log"
 	"math/rand"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
@@ -65,7 +67,7 @@ func (h *URLHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
 func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "URL is required", http.StatusBadRequest)
+		http.Error(w, "тело не читается", http.StatusBadRequest)
 		return
 	}
 	defer func(Body io.ReadCloser) {
@@ -78,17 +80,33 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	errUnmarshal := json.Unmarshal(body, &m)
 	if errUnmarshal != nil {
 		zap.L().Error("unmarshal error", zap.Error(errUnmarshal))
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		http.Error(w, "проблема распаковки тела", http.StatusBadRequest)
 		return
 	}
 	originalURL, ok := m["url"]
 	if !ok {
-		http.Error(w, "URL is required", http.StatusBadRequest)
+		http.Error(w, "не верный ключ", http.StatusBadRequest)
 		return
 	}
 
-	if !utils.IsValidURL(originalURL) {
-		http.Error(w, "URL is required", http.StatusBadRequest)
+	if strings.ContainsAny(originalURL, " ") {
+		http.Error(w, "url содержит пробел", http.StatusBadRequest)
+		return
+	}
+
+	u, err := url.Parse(originalURL)
+	if err != nil || u.Scheme == "" {
+		http.Error(w, "пустая схема", http.StatusBadRequest)
+		return
+	}
+	if u.Host == "" {
+		http.Error(w, "нет хоста", http.StatusBadRequest)
+		return
+	}
+
+	// Проверка допустимых схем
+	if u.Scheme != "http" && u.Scheme != "https" {
+		http.Error(w, "не допустимая схема", http.StatusBadRequest)
 		return
 	}
 
