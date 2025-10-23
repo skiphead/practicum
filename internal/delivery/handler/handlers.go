@@ -83,12 +83,12 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	}
 	originalURL, ok := m["url"]
 	if !ok {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		http.Error(w, "Invalid URL", http.StatusBadRequest)
 		return
 	}
 
 	if !utils.IsValidURL(originalURL) {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		http.Error(w, "URL is required", http.StatusBadRequest)
 		return
 	}
 
@@ -135,7 +135,7 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !utils.IsValidURL(originalURL) {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		http.Error(w, "Invalid URL", http.StatusBadRequest)
 		return
 	}
 
