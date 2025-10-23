@@ -48,14 +48,8 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 	return r
 }
 
-func (h *URLHandler) ServeMUX() *http.ServeMux {
-	r := http.NewServeMux()
-	r.HandleFunc("/", h.HandleRequest) // Регистрирует обработчик для всех путей
-
-	return r
-}
-
 func (h *URLHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
+
 	switch r.Method {
 	case http.MethodPost:
 		h.createShortURL(w, r)
@@ -64,9 +58,13 @@ func (h *URLHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+
 }
 
 func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
+
+	w.Header().Set("Content-Type", "application/json")
+
 	contentType := r.Header.Get("Content-Type")
 	if contentType != "application/json" {
 		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
