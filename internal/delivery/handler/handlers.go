@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/skiphead/practicum/pkg/storage"
 	"github.com/skiphead/practicum/pkg/utils"
@@ -79,17 +80,20 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid URL", http.StatusBadRequest)
 		return
 	}
-	key := h.baseURL
-	if key == "" {
-		key = h.generateUniqueKey()
-	}
+
+	key := h.generateUniqueKey()
+
 	h.storage.Save(key, originalURL)
 
-	response := "http://" + h.serverAddr + "/" + key
+	baseURL := fmt.Sprintf("http://%s/%s", h.serverAddr, key)
+
+	if h.baseURL != "" {
+		baseURL = fmt.Sprintf("%s/%s", h.baseURL, key)
+	}
 
 	w.WriteHeader(http.StatusCreated)
 
-	_, err = w.Write([]byte(response))
+	_, err = w.Write([]byte(baseURL))
 	if err != nil {
 		return
 	}
