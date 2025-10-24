@@ -64,18 +64,16 @@ func (h *URLHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
 func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
-	contentType := r.Header.Get("Content-Type")
-	if contentType != "application/json" {
+	if r.Header.Get("Content-Type") != "application/json" {
 		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
 		return
 	}
 
-	body, err := io.ReadAll(r.Body)
+	body, err := h.readRequestBody(r)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	defer h.closeBody(r.Body)
 
 	var original entity.ShortenRequest
 	if err := json.Unmarshal(body, &original); err != nil {
@@ -84,9 +82,9 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortURL, err := h.processURL(original.URL, w)
+	shortURL, err := h.processAndSaveURL(original.URL, w)
 	if err != nil {
-		return // ошибка уже обработана в processURL
+		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
@@ -94,48 +92,67 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
+	body, err := h.readRequestBody(r)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-	defer h.closeBody(r.Body)
 
 	originalURL := string(body)
-	shortURL, err := h.processURL(originalURL, w)
+	shortURL, err := h.processAndSaveURL(originalURL, w)
 	if err != nil {
-		return // ошибка уже обработана в processURL
+		zap.L().Error("process error", zap.Error(err))
+		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	_, err = w.Write([]byte(shortURL))
 	if err != nil {
+		zap.L().Error("write error", zap.Error(err))
 		return
 	}
 }
 
-// processURL общая логика обработки URL
-func (h *URLHandler) processURL(originalURL string, w http.ResponseWriter) (string, error) {
+// readRequestBody унифицированное чтение тела запроса
+func (h *URLHandler) readRequestBody(r *http.Request) ([]byte, error) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	defer h.closeBody(r.Body)
+	return body, nil
+}
+
+// processAndSaveURL общая логика обработки и сохранения URL
+func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter) (string, error) {
+	if err := h.validateURL(originalURL, w); err != nil {
+		return "", err
+	}
+
+	key := h.generateUniqueKey()
+	h.storage.Save(key, originalURL)
+	return h.buildShortURL(key), nil
+}
+
+// validateURL унифицированная валидация URL
+func (h *URLHandler) validateURL(originalURL string, w http.ResponseWriter) error {
 	if originalURL == "" {
 		http.Error(w, "URL is required", http.StatusBadRequest)
-		return "", fmt.Errorf("URL is required")
+		return fmt.Errorf("URL is required")
 	}
 
 	if !utils.IsValidURL(originalURL) {
 		http.Error(w, "Invalid URL", http.StatusBadRequest)
-		return "", fmt.Errorf("invalid URL")
+		return fmt.Errorf("invalid URL scheme or host")
 	}
 
 	u, err := url.Parse(originalURL)
 	if err != nil || u.Scheme == "" || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		http.Error(w, "Invalid URL", http.StatusBadRequest)
-		return "", fmt.Errorf("invalid URL scheme or host")
+		return fmt.Errorf("invalid URL scheme or host")
 	}
 
-	key := h.generateUniqueKey()
-	h.storage.Save(key, originalURL)
-
-	return h.buildShortURL(key), nil
+	return nil
 }
 
 // buildShortURL создает короткий URL на основе ключа
@@ -190,55 +207,45 @@ func (h *URLHandler) closeBody(body io.ReadCloser) {
 func xMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		// по умолчанию устанавливаем оригинальный http.ResponseWriter как тот,
-		// который будем передавать следующей функции
 		ow := w
 
-		// проверяем, что клиент умеет получать от сервера сжатые данные в формате gzip
-		acceptEncoding := r.Header.Get("Accept-Encoding")
-		supportsGzip := strings.Contains(acceptEncoding, "gzip")
+		// Унифицированная обработка сжатия
+		supportsGzip := strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")
 
 		contentType := r.Header.Get("Content-Type")
-		if contentType == "text/html" || contentType == "application/json" {
+		supportedContentType := contentType == "text/plain" || contentType == "application/json"
+
+		if supportedContentType {
 			if supportsGzip {
-				// оборачиваем оригинальный http.ResponseWriter новым с поддержкой сжатия
 				cw := newCompressWriter(w)
-				// меняем оригинальный http.ResponseWriter на новый
 				ow = cw
-				// не забываем отправить клиенту все сжатые данные после завершения middleware
 				defer cw.Close()
 			}
 
-			// проверяем, что клиент отправил серверу сжатые данные в формате gzip
 			contentEncoding := r.Header.Get("Content-Encoding")
 			sendsGzip := strings.Contains(contentEncoding, "gzip")
 			if sendsGzip {
-				// оборачиваем тело запроса в io.Reader с поддержкой декомпрессии
 				cr, err := newCompressReader(r.Body)
 				if err != nil {
 					w.WriteHeader(http.StatusInternalServerError)
 					return
 				}
-				// меняем тело запроса на новое
 				r.Body = cr
 				defer cr.Close()
 			}
 		}
 
 		ww := middleware.NewWrapResponseWriter(ow, r.ProtoMajor)
-
 		next.ServeHTTP(ww, r)
 
 		duration := time.Since(start)
 
-		//Запрос
-		zap.L().Info("msg",
+		// Объединенное логирование запроса и ответа
+		zap.L().Info("request",
 			zap.String("path", r.URL.Path),
 			zap.String("method", r.Method),
 			zap.Duration("duration", duration))
-
-		//Ответ
-		zap.L().Info("msg",
+		zap.L().Info("response",
 			zap.Int("status", ww.Status()),
 			zap.Int("bytes", ww.BytesWritten()))
 	})
