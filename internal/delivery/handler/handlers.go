@@ -9,7 +9,6 @@ import (
 	"github.com/go-chi/render"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/pkg/storage"
-	"github.com/skiphead/practicum/pkg/utils"
 	"go.uber.org/zap"
 	"io"
 	"log"
@@ -101,12 +100,14 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	originalURL := string(body)
 	shortURL, err := h.processAndSaveURL(originalURL, w)
 	if err != nil {
+		zap.L().Error("process error", zap.Error(err))
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	_, err = w.Write([]byte(shortURL))
 	if err != nil {
+		zap.L().Error("write error", zap.Error(err))
 		return
 	}
 }
@@ -137,11 +138,6 @@ func (h *URLHandler) validateURL(originalURL string, w http.ResponseWriter) erro
 	if originalURL == "" {
 		http.Error(w, "URL is required", http.StatusBadRequest)
 		return fmt.Errorf("URL is required")
-	}
-
-	if !utils.IsValidURL(originalURL) {
-		http.Error(w, "Invalid URL", http.StatusBadRequest)
-		return fmt.Errorf("invalid URL")
 	}
 
 	u, err := url.Parse(originalURL)
