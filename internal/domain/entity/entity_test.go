@@ -90,18 +90,3 @@ func TestShortenResponse_JSON(t *testing.T) {
 		})
 	}
 }
-
-// Дополнительные тесты на валидацию (при необходимости)
-func TestShortenRequest_Validation(t *testing.T) {
-	req := ShortenRequest{URL: ""}
-	if req.URL == "" {
-		t.Log("Empty URL should be handled in validation logic")
-	}
-}
-
-func TestShortenResponse_ResultFormat(t *testing.T) {
-	resp := ShortenResponse{Result: "shortened"}
-	if resp.Result == "" {
-		t.Error("Result should not be empty in normal operation")
-	}
-}

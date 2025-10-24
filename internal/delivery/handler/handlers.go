@@ -72,14 +72,13 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 
 	body, err := h.readRequestBody(r)
 	if err != nil {
-		render.JSON(w, r, map[string]string{"error": "Invalid request body"})
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	var original entity.ShortenRequest
 	if err := json.Unmarshal(body, &original); err != nil {
-		zap.L().Error("unmarshal error", zap.Error(err))
-		render.JSON(w, r, map[string]string{"error": "URL is required"})
+		http.Error(w, "URL is required", http.StatusBadRequest)
 		return
 	}
 
@@ -105,14 +104,12 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	originalURL := strings.TrimSpace(string(body))
 	shortURL, err := h.processAndSaveURL(originalURL, w)
 	if err != nil {
-		zap.L().Error("process error", zap.Error(err))
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	_, err = w.Write([]byte(shortURL))
 	if err != nil {
-		zap.L().Error("write error", zap.Error(err))
 		return
 	}
 }
