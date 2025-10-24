@@ -9,7 +9,6 @@ import (
 	"github.com/go-chi/render"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/pkg/storage"
-	"github.com/skiphead/practicum/pkg/utils"
 	"go.uber.org/zap"
 	"io"
 	"log"
@@ -97,12 +96,26 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	body, err := h.readRequestBody(r)
 	if err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		h.writeError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	originalURL := strings.TrimSpace(string(body))
-	shortURL, err := h.processAndSaveURL(originalURL, w)
+
+	// Ранняя проверка на пустой URL
+	if originalURL == "" {
+		h.writeError(w, "URL is required", http.StatusBadRequest)
+		return
+	}
+
+	// Немедленная санитизация
+	sanitizedURL := h.sanitizeURL(originalURL)
+	if sanitizedURL == "" {
+		h.writeError(w, "Invalid URL after sanitization", http.StatusBadRequest)
+		return
+	}
+
+	shortURL, err := h.processAndSaveURL(sanitizedURL, w)
 	if err != nil {
 		return
 	}
@@ -126,54 +139,62 @@ func (h *URLHandler) readRequestBody(r *http.Request) ([]byte, error) {
 
 // processAndSaveURL общая логика обработки и сохранения URL
 func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter) (string, error) {
-	// Очищаем URL перед обработкой
-	cleanedURL := strings.TrimSpace(h.sanitizeURL(originalURL))
+	// URL уже должен быть санитизирован до этого момента
 
-	if err := h.validateURL(cleanedURL, w); err != nil {
+	if err := h.validateURL(originalURL, w); err != nil {
+		h.writeError(w, err.Error(), http.StatusBadRequest)
 		return "", err
 	}
 
 	key := h.generateUniqueKey()
-	h.storage.Save(key, cleanedURL)
+	h.storage.Save(key, originalURL)
 	return h.buildShortURL(key), nil
 }
 
 func (h *URLHandler) sanitizeURL(urlString string) string {
-	// Удаляем управляющие символы
-	return strings.Map(func(r rune) rune {
+	// Удаляем все управляющие символы и лишние пробелы
+	cleaned := strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return -1
 		}
 		return r
 	}, urlString)
+
+	// Удаляем все пробельные символы по краям
+	return strings.TrimSpace(cleaned)
 }
 
 func (h *URLHandler) validateURL(originalURL string, w http.ResponseWriter) error {
 	if originalURL == "" {
-		http.Error(w, "URL is required", http.StatusBadRequest)
 		return fmt.Errorf("URL is required")
 	}
 
-	// Очищаем URL перед валидацией
-	cleanedURL := strings.TrimSpace(h.sanitizeURL(originalURL))
-
-	if cleanedURL == "" {
-		http.Error(w, "Invalid URL", http.StatusBadRequest)
-		return fmt.Errorf("invalid URL after sanitization")
+	// Пытаемся распарсить URL
+	u, err := url.Parse(originalURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %v", err)
 	}
 
-	if !utils.IsValidURL(cleanedURL) {
-		http.Error(w, "Invalid URL", http.StatusBadRequest)
-		return fmt.Errorf("invalid URL")
+	// Проверяем обязательные компоненты URL
+	if u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("Invalid URL")
 	}
 
-	u, err := url.Parse(cleanedURL)
-	if err != nil || u.Scheme == "" || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		http.Error(w, "Invalid URL", http.StatusBadRequest)
-		return fmt.Errorf("invalid URL scheme or host")
+	// Проверяем допустимые схемы
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("Invalid URL")
 	}
 
 	return nil
+}
+
+func (h *URLHandler) writeError(w http.ResponseWriter, message string, statusCode int) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(statusCode)
+	_, err := w.Write([]byte(message))
+	if err != nil {
+		return
+	}
 }
 
 // buildShortURL создает короткий URL на основе ключа
@@ -181,7 +202,8 @@ func (h *URLHandler) buildShortURL(key string) string {
 	if h.baseURL != "" {
 		return fmt.Sprintf("%s/%s", h.baseURL, key)
 	}
-	return fmt.Sprintf("http://%s/%s", h.serverAddr, key)
+	const schema = `http`
+	return fmt.Sprintf("%s://%s/%s", schema, h.serverAddr, key)
 }
 
 func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
@@ -241,7 +263,12 @@ func xMiddleware(next http.Handler) http.Handler {
 			if supportsGzip {
 				cw := newCompressWriter(w)
 				ow = cw
-				defer cw.Close()
+				defer func(cw *compressWriter) {
+					err := cw.Close()
+					if err != nil {
+						zap.L().Info("compress error", zap.Error(err))
+					}
+				}(cw)
 			}
 
 			contentEncoding := r.Header.Get("Content-Encoding")
@@ -253,7 +280,12 @@ func xMiddleware(next http.Handler) http.Handler {
 					return
 				}
 				r.Body = cr
-				defer cr.Close()
+				defer func(cr *compressReader) {
+					err := cr.Close()
+					if err != nil {
+						zap.L().Info("close body", zap.Error(err))
+					}
+				}(cr)
 			}
 		}
 
@@ -307,8 +339,7 @@ func (c *compressWriter) Close() error {
 	return c.zw.Close()
 }
 
-// compressReader реализует интерфейс io.ReadCloser и позволяет прозрачно для сервера
-// декомпрессировать получаемые от клиента данные
+// compressReader декомпрессировать получаемые от клиента данные
 type compressReader struct {
 	r  io.ReadCloser
 	zr *gzip.Reader
@@ -326,7 +357,8 @@ func newCompressReader(r io.ReadCloser) (*compressReader, error) {
 	}, nil
 }
 
-func (c compressReader) Read(p []byte) (n int, err error) {
+// Изменено на pointer receiver
+func (c *compressReader) Read(p []byte) (n int, err error) {
 	return c.zr.Read(p)
 }
 
