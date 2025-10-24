@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/render"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/pkg/storage"
+	"github.com/skiphead/practicum/pkg/utils"
 	"go.uber.org/zap"
 	"io"
 	"log"
@@ -17,6 +18,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -70,16 +72,19 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 
 	body, err := h.readRequestBody(r)
 	if err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		render.JSON(w, r, map[string]string{"error": "Invalid request body"})
 		return
 	}
 
 	var original entity.ShortenRequest
 	if err := json.Unmarshal(body, &original); err != nil {
 		zap.L().Error("unmarshal error", zap.Error(err))
-		http.Error(w, "URL is required", http.StatusBadRequest)
+		render.JSON(w, r, map[string]string{"error": "URL is required"})
 		return
 	}
+
+	// Очищаем URL из JSON
+	original.URL = strings.TrimSpace(h.sanitizeURL(original.URL))
 
 	shortURL, err := h.processAndSaveURL(original.URL, w)
 	if err != nil {
@@ -97,7 +102,7 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	originalURL := string(body)
+	originalURL := strings.TrimSpace(string(body))
 	shortURL, err := h.processAndSaveURL(originalURL, w)
 	if err != nil {
 		zap.L().Error("process error", zap.Error(err))
@@ -124,23 +129,48 @@ func (h *URLHandler) readRequestBody(r *http.Request) ([]byte, error) {
 
 // processAndSaveURL общая логика обработки и сохранения URL
 func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter) (string, error) {
-	if err := h.validateURL(originalURL, w); err != nil {
+	// Очищаем URL перед обработкой
+	cleanedURL := strings.TrimSpace(h.sanitizeURL(originalURL))
+
+	if err := h.validateURL(cleanedURL, w); err != nil {
 		return "", err
 	}
 
 	key := h.generateUniqueKey()
-	h.storage.Save(key, originalURL)
+	h.storage.Save(key, cleanedURL)
 	return h.buildShortURL(key), nil
 }
 
-// validateURL унифицированная валидация URL
+func (h *URLHandler) sanitizeURL(urlString string) string {
+	// Удаляем управляющие символы
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, urlString)
+}
+
 func (h *URLHandler) validateURL(originalURL string, w http.ResponseWriter) error {
 	if originalURL == "" {
 		http.Error(w, "URL is required", http.StatusBadRequest)
 		return fmt.Errorf("URL is required")
 	}
 
-	u, err := url.Parse(originalURL)
+	// Очищаем URL перед валидацией
+	cleanedURL := strings.TrimSpace(h.sanitizeURL(originalURL))
+
+	if cleanedURL == "" {
+		http.Error(w, "Invalid URL", http.StatusBadRequest)
+		return fmt.Errorf("invalid URL after sanitization")
+	}
+
+	if !utils.IsValidURL(cleanedURL) {
+		http.Error(w, "Invalid URL", http.StatusBadRequest)
+		return fmt.Errorf("invalid URL")
+	}
+
+	u, err := url.Parse(cleanedURL)
 	if err != nil || u.Scheme == "" || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		http.Error(w, "Invalid URL", http.StatusBadRequest)
 		return fmt.Errorf("invalid URL scheme or host")
