@@ -23,6 +23,7 @@ import (
 const (
 	keyLength     = 5
 	randomCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	schema        = `http`
 )
 
 type URLHandler struct {
@@ -160,7 +161,8 @@ func (h *URLHandler) buildShortURL(key string) string {
 	if h.baseURL != "" {
 		return fmt.Sprintf("%s/%s", h.baseURL, key)
 	}
-	return fmt.Sprintf("http://%s/%s", h.serverAddr, key)
+
+	return fmt.Sprintf("%s://%s/%s", schema, h.serverAddr, key)
 }
 
 func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
@@ -219,7 +221,12 @@ func xMiddleware(next http.Handler) http.Handler {
 			if supportsGzip {
 				cw := newCompressWriter(w)
 				ow = cw
-				defer cw.Close()
+				defer func(cw *compressWriter) {
+					errCw := cw.Close()
+					if errCw != nil {
+						zap.L().Error("error closing compress writer", zap.Error(errCw))
+					}
+				}(cw)
 			}
 
 			contentEncoding := r.Header.Get("Content-Encoding")
@@ -231,7 +238,12 @@ func xMiddleware(next http.Handler) http.Handler {
 					return
 				}
 				r.Body = cr
-				defer cr.Close()
+				defer func(cr *compressReader) {
+					errCr := cr.Close()
+					if errCr != nil {
+						zap.L().Error("error closing compress writer", zap.Error(errCr))
+					}
+				}(cr)
 			}
 		}
 
@@ -304,7 +316,8 @@ func newCompressReader(r io.ReadCloser) (*compressReader, error) {
 	}, nil
 }
 
-func (c compressReader) Read(p []byte) (n int, err error) {
+// Изменено на pointer receiver
+func (c *compressReader) Read(p []byte) (n int, err error) {
 	return c.zr.Read(p)
 }
 
