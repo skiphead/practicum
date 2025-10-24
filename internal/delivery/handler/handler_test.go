@@ -259,25 +259,25 @@ func TestURLHandler_createShortApiURL(t *testing.T) {
 			name:         "missing url field",
 			body:         map[string]string{"not_url": "test"},
 			wantStatus:   http.StatusBadRequest,
-			wantResponse: "URL is required",
+			wantResponse: "URL is required\n",
 		},
 		{
 			name:         "invalid URL",
 			body:         map[string]string{"url": "invalid-url"},
 			wantStatus:   http.StatusBadRequest,
-			wantResponse: "Invalid URL",
+			wantResponse: "Invalid URL\n",
 		},
 		{
 			name:         "malformed JSON",
 			body:         "{invalid json",
 			wantStatus:   http.StatusBadRequest,
-			wantResponse: "URL is required", // Изменено с "Invalid request body"
+			wantResponse: "URL is required\n", // Изменено с "Invalid request body"
 		},
 		{
 			name:         "empty body",
 			body:         "",
 			wantStatus:   http.StatusBadRequest,
-			wantResponse: "URL is required", // JSON unmarshal пустой строки создает пустую map
+			wantResponse: "URL is required\n", // JSON unmarshal пустой строки создает пустую map
 		},
 	}
 
