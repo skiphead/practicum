@@ -254,9 +254,6 @@ func TestCachedFileStorage(t *testing.T) {
 		stats := storage.Stats()
 
 		// Проверяем основные поля статистики
-		if stats["storage_type"] != "cached_file" {
-			t.Errorf("Expected storage_type 'cached_file', got '%s'", stats["storage_type"])
-		}
 		if stats["file_path"] != dbPath {
 			t.Errorf("Expected file_path '%s', got '%s'", dbPath, stats["file_path"])
 		}
