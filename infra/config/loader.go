@@ -16,9 +16,10 @@ func LoadConfig(configPath string) (*Config, error) {
 		}
 	}
 
-	var flagServerAddr, flagBaseURL string
+	var flagServerAddr, flagBaseURL, flagFileStoragePath string
 	flag.StringVar(&flagServerAddr, "a", "", "Порт для запуска сервера")
 	flag.StringVar(&flagBaseURL, "b", "", "Базовый адрес результирующего сокращённого URL")
+	flag.StringVar(&flagFileStoragePath, "f", "", "Путь до файла хранилища")
 	flag.Parse()
 
 	if flagServerAddr != "" {
@@ -34,9 +35,15 @@ func LoadConfig(configPath string) (*Config, error) {
 	if env := os.Getenv("SERVER_ADDRESS"); env != "" {
 		config.ServerAddr = env
 	}
+	if env := os.Getenv("FILE_STORAGE_PATH"); env != "" {
+		config.FileStoragePath = env
+	}
 
 	if config.ServerAddr == "" {
 		config.ServerAddr = "localhost:8080"
+	}
+	if config.FileStoragePath == "" {
+		config.FileStoragePath = "data.json"
 	}
 
 	return config, nil

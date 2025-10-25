@@ -5,6 +5,7 @@ go 1.23.3
 require (
 	github.com/go-chi/chi/v5 v5.2.3
 	github.com/go-chi/render v1.0.3
+	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.8.1
 	go.uber.org/zap v1.27.0
 	gopkg.in/yaml.v3 v3.0.1

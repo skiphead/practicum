@@ -6,8 +6,9 @@ import (
 )
 
 type Config struct {
-	ServerAddr string `yaml:"server_addr"`
-	BaseURL    string `yaml:"base_url"`
+	ServerAddr      string `yaml:"server_addr"`
+	BaseURL         string `yaml:"base_url"`
+	FileStoragePath string `yaml:"file_storage_path"`
 }
 
 func NewDefaultConfig() *Config {

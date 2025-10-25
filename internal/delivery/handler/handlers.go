@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	keyLength     = 5
+	keyLength     = 8
 	randomCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	schema        = `http`
 )
@@ -45,21 +45,23 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 	r.Use(xMiddleware)
 	r.Use(render.SetContentType(render.ContentTypeJSON))
 	r.Get("/{key}", h.redirectURL)
+	r.Get("/stats", h.stats)
 	r.Post("/", h.createShortURL)
 	r.Post("/api/shorten", h.createShortAPIURL)
 
 	return r
 }
 
-func (h *URLHandler) HandleRequest(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodPost:
-		h.createShortURL(w, r)
-	case http.MethodGet:
-		h.redirectURL(w, r)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+func (h *URLHandler) stats(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Header.Get("Content-Type") != "application/json" {
+		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+		return
 	}
+
+	w.WriteHeader(http.StatusCreated)
+	render.JSON(w, r, h.storage.Stats())
 }
 
 func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
@@ -172,20 +174,21 @@ func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := r.URL.Path[1:]
-	originalURL, exists := h.storage.Get(key)
+	data, exists, _ := h.storage.Get(key)
+
 	if !exists {
 		http.Error(w, "Short URL not found", http.StatusNotFound)
 		return
 	}
 
-	w.Header().Set("Location", originalURL)
+	w.Header().Set("Location", data.OriginalURL)
 	w.WriteHeader(http.StatusTemporaryRedirect)
 }
 
 func (h *URLHandler) generateUniqueKey() string {
 	for {
 		key := h.generateRandomKey()
-		if _, exists := h.storage.Get(key); !exists {
+		if _, exists, _ := h.storage.Get(key); !exists {
 			return key
 		}
 	}

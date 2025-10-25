@@ -34,7 +34,11 @@ func main() {
 			zap.Error(err))
 	}
 
-	store := storage.NewMemoryStorage()
+	store, err := storage.NewCachedFileStorage(cfg.FileStoragePath)
+	if err != nil {
+		zap.L().Panic("storage initialization failed", zap.Error(err))
+	}
+
 	handler := handlers.NewURLHandler(store, cfg.ServerAddr, cfg.BaseURL)
 
 	srv, errNewServe := delivery.NewServerChi(cfg, handler.ChiMux())
