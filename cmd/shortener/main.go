@@ -6,6 +6,7 @@ import (
 	"github.com/skiphead/practicum/internal/delivery"
 	"github.com/skiphead/practicum/internal/delivery/handler"
 	"github.com/skiphead/practicum/pkg/storage"
+	"go.uber.org/zap"
 	"log"
 	"os"
 	"os/signal"
@@ -14,22 +15,36 @@ import (
 )
 
 func main() {
+	logger, err := zap.NewProduction()
+	if err != nil {
+		log.Fatalf("can't initialize zap logger: %v", err)
+	}
+	defer logger.Sync()
+	zap.ReplaceGlobals(logger)
+
 	cfg, err := config.LoadConfig("configs/config.yaml")
 	if err != nil {
 		cfg = config.NewDefaultConfig()
-		log.Printf("Не удалось загрузить config.yaml, используется конфигурация по умолчанию: %v", err)
+		zap.L().Info("Не удалось загрузить config.yaml, используется конфигурация по умолчанию",
+			zap.Error(err))
 	}
 
 	if err = cfg.Validate(); err != nil {
-		log.Fatalf("Ошибка валидации конфигурации: %v", err)
+		zap.L().Fatal("Ошибка валидации конфигурации",
+			zap.Error(err))
 	}
 
-	store := storage.NewMemoryStorage()
-	handler := handlers.NewURLHandler(store, cfg.ServerAddr)
+	store, err := storage.NewCachedFileStorage(cfg.FileStoragePath)
+	if err != nil {
+		zap.L().Panic("storage initialization failed", zap.Error(err))
+	}
+
+	handler := handlers.NewURLHandler(store, cfg.ServerAddr, cfg.BaseURL)
 
 	srv, errNewServe := delivery.NewServerChi(cfg, handler.ChiMux())
 	if errNewServe != nil {
-		log.Fatal("Ошибка создания сервера:", errNewServe)
+		zap.L().Fatal("Ошибка создания сервера",
+			zap.Error(errNewServe))
 	}
 
 	serverErr := srv.Start()
@@ -40,13 +55,14 @@ func main() {
 	select {
 	case <-ctx.Done():
 		log.Println("Получен сигнал завершения работы")
+		zap.L().Warn("Получен сигнал завершения работы")
 	case err = <-serverErr:
-		log.Fatalf("Ошибка сервера: %v", err)
+		zap.L().Fatal("Ошибка сервера",
+			zap.Error(err))
 	}
 
 	if err = srv.Shutdown(10 * time.Second); err != nil {
-		log.Printf("Ошибка завершения работы сервера: %v", err)
+		zap.L().Warn("Ошибка завершения работы сервера", zap.Error(err))
 	}
-
-	log.Println("Сервер завершил работу корректно")
+	zap.L().Info("Сервер завершил работу корректно")
 }

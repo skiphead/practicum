@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"testing"
 )
 
@@ -49,7 +50,7 @@ func TestConfig_Validate(t *testing.T) {
 			name:    "malformed address (no colon)",
 			cfg:     &Config{ServerAddr: "localhost8080"},
 			wantErr: true,
-			errText: "address localhost8080: missing port in address",
+			errText: "error parsing server address: address localhost8080: missing port in address",
 		},
 	}
 
@@ -64,5 +65,31 @@ func TestConfig_Validate(t *testing.T) {
 				t.Errorf("Validate() error = %v, want err text %v", err.Error(), tt.errText)
 			}
 		})
+	}
+}
+
+func TestGetEnvLoadConfig(t *testing.T) {
+
+	key := "SERVER_ADDRESS"
+	value := "localhost:8082"
+	errSetEnv := os.Setenv(key, value)
+	if errSetEnv != nil {
+		t.Error("Error setting environment variable", errSetEnv)
+	}
+	defer os.Unsetenv(key)
+
+	cfg, err := LoadConfig("configs/config.yaml")
+	if err != nil {
+		t.Errorf("Error loading config: %v", err)
+	}
+
+	//Тест переменная установлена
+	if cfg.ServerAddr != value {
+		t.Errorf("Expected '%s', got '%s'", value, cfg.ServerAddr)
+	}
+	//Тест переменная не установлена
+	resultEmpty := os.Getenv("Какая-то-переменная")
+	if cfg.ServerAddr == resultEmpty {
+		t.Errorf("Expected empty string, got '%s'", resultEmpty)
 	}
 }
