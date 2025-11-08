@@ -129,8 +129,8 @@ func retryOperation(operation func() error, config RetryConfig) error {
 	return fmt.Errorf("after %d attempts: %w", config.MaxRetries+1, lastErr)
 }
 
-// Conn создает пул подключений к базе данных с проверками доступности и повторными попытками
-func Conn(config string) *pgxpool.Pool {
+// SafeConn создает пул подключений к базе данных с проверками доступности и повторными попытками
+func SafeConn(config string) *pgxpool.Pool {
 	return ConnWithRetry(config, &RealTCPChecker{}, 5*time.Second, DefaultRetryConfig())
 }
 

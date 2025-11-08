@@ -43,6 +43,7 @@ func main() {
 	}
 
 	//pool := postgresql.Conn(cfg.DatabaseDSN)
+
 	pool, connErr := pgxpool.New(context.Background(), cfg.DatabaseDSN)
 	if connErr != nil {
 		zap.L().Error("pgxpool initialization failed", zap.Error(connErr))

@@ -15,8 +15,8 @@ type Config struct {
 func NewDefaultConfig() *Config {
 
 	return &Config{
-		DatabaseDSN: "postgres://pgx_md5:secret@localhost:5432/pgx_test?sslmode=disable",
-		ServerAddr:  "localhost:8080",
+
+		ServerAddr: "localhost:8080",
 	}
 }
 
