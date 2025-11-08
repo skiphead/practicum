@@ -16,7 +16,7 @@ const invalidAddr = `invalid-address`
 func TestNewServer(t *testing.T) {
 	cfg := &config.Config{ServerAddr: serverAddr}
 	memoryStorage, _ := storage.NewCachedFileStorage("tests/test.json")
-	pool := postgresql.Conn(cfg.DatabaseDSN)
+	pool := postgresql.SafeConn(cfg.DatabaseDSN)
 
 	repoHealth := repository.NewHealthRepository(pool)
 	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr, cfg.BaseURL, *usecase.NewHealthUseCase(repoHealth))
@@ -34,7 +34,7 @@ func TestNewServer(t *testing.T) {
 func TestNewServer_InvalidConfig(t *testing.T) {
 	cfg := &config.Config{ServerAddr: invalidAddr}
 	memoryStorage, _ := storage.NewCachedFileStorage("test.json")
-	pool := postgresql.Conn(cfg.DatabaseDSN)
+	pool := postgresql.SafeConn(cfg.DatabaseDSN)
 
 	repoHealth := repository.NewHealthRepository(pool)
 	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr, cfg.BaseURL, *usecase.NewHealthUseCase(repoHealth))
