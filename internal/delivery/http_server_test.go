@@ -1,8 +1,11 @@
 package delivery
 
 import (
+	"github.com/skiphead/practicum/infra/client/postgresql"
 	"github.com/skiphead/practicum/infra/config"
 	handlers "github.com/skiphead/practicum/internal/delivery/handler"
+	"github.com/skiphead/practicum/internal/domain/repository"
+	"github.com/skiphead/practicum/internal/usecase"
 	"github.com/skiphead/practicum/pkg/storage"
 	"testing"
 )
@@ -13,7 +16,10 @@ const invalidAddr = `invalid-address`
 func TestNewServer(t *testing.T) {
 	cfg := &config.Config{ServerAddr: serverAddr}
 	memoryStorage, _ := storage.NewCachedFileStorage("tests/test.json")
-	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr, cfg.BaseURL)
+	pool := postgresql.Conn(cfg.DatabaseDSN)
+
+	repoHealth := repository.NewHealthRepository(pool)
+	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr, cfg.BaseURL, *usecase.NewHealthUseCase(repoHealth))
 
 	server, err := NewServerChi(cfg, handler.ChiMux())
 	if err != nil {
@@ -28,7 +34,10 @@ func TestNewServer(t *testing.T) {
 func TestNewServer_InvalidConfig(t *testing.T) {
 	cfg := &config.Config{ServerAddr: invalidAddr}
 	memoryStorage, _ := storage.NewCachedFileStorage("test.json")
-	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr, cfg.BaseURL)
+	pool := postgresql.Conn(cfg.DatabaseDSN)
+
+	repoHealth := repository.NewHealthRepository(pool)
+	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr, cfg.BaseURL, *usecase.NewHealthUseCase(repoHealth))
 
 	_, err := NewServerChi(cfg, handler.ChiMux())
 	if err == nil {
