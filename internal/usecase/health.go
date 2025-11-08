@@ -13,11 +13,8 @@ func NewHealthUseCase(healthRepo repository.HealthRepository) *HealthUseCase {
 	return &HealthUseCase{HealthRepo: healthRepo}
 }
 
-func (h HealthUseCase) Health(ctx context.Context) bool {
+func (h *HealthUseCase) Health(ctx context.Context) error {
 
-	if h.HealthRepo.Ping(ctx) {
-		return true
-	}
+	return h.HealthRepo.Ping(ctx)
 
-	return false
 }

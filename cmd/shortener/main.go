@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"github.com/skiphead/practicum/infra/client/postgresql"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/skiphead/practicum/infra/config"
 	"github.com/skiphead/practicum/internal/delivery"
 	"github.com/skiphead/practicum/internal/delivery/handler"
@@ -42,7 +42,11 @@ func main() {
 		zap.L().Panic("storage initialization failed", zap.Error(err))
 	}
 
-	pool := postgresql.Conn(cfg.DatabaseDSN)
+	//pool := postgresql.Conn(cfg.DatabaseDSN)
+	pool, connErr := pgxpool.New(context.Background(), cfg.DatabaseDSN)
+	if connErr != nil {
+		zap.L().Error("pgxpool initialization failed", zap.Error(connErr))
+	}
 
 	repoHealth := repository.NewHealthRepository(pool)
 
