@@ -9,12 +9,14 @@ type Config struct {
 	ServerAddr      string `yaml:"server_addr"`
 	BaseURL         string `yaml:"base_url"`
 	FileStoragePath string `yaml:"file_storage_path"`
+	DatabaseDSN     string `yaml:"database_dsn"`
 }
 
 func NewDefaultConfig() *Config {
 
 	return &Config{
-		ServerAddr: "localhost:8080",
+		DatabaseDSN: "postgres://pgx_md5:secret@localhost:5432/pgx_test?sslmode=disable",
+		ServerAddr:  "localhost:8080",
 	}
 }
 

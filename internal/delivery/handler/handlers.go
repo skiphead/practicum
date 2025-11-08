@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 	"github.com/skiphead/practicum/internal/domain/entity"
+	"github.com/skiphead/practicum/internal/usecase"
 	"github.com/skiphead/practicum/pkg/storage"
 	"github.com/skiphead/practicum/pkg/utils"
 	"go.uber.org/zap"
@@ -28,28 +30,49 @@ const (
 
 type URLHandler struct {
 	storage    storage.Storage
+	health     *usecase.HealthUseCase
 	serverAddr string
 	baseURL    string
 }
 
-func NewURLHandler(storage storage.Storage, serverAddr, baseURL string) *URLHandler {
+func NewURLHandler(storage storage.Storage, serverAddr, baseURL string, health usecase.HealthUseCase) *URLHandler {
 	return &URLHandler{
 		storage:    storage,
 		serverAddr: serverAddr,
 		baseURL:    baseURL,
+		health:     &health,
 	}
 }
 
 func (h *URLHandler) ChiMux() *chi.Mux {
+
 	r := chi.NewRouter()
-	r.Use(xMiddleware)
+	r.Use(CompressionMiddleware)
+	r.Use(LoggingMiddleware)
 	r.Use(render.SetContentType(render.ContentTypeJSON))
 	r.Get("/{key}", h.redirectURL)
 	r.Get("/stats", h.stats)
 	r.Post("/", h.createShortURL)
 	r.Post("/api/shorten", h.createShortAPIURL)
+	r.Get("/ping", h.pingDB)
 
 	return r
+}
+
+func (h *URLHandler) pingDB(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*5)
+	defer cancel()
+	if !h.health.HealthRepo.Ping(ctx) {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, err := w.Write([]byte("ok"))
+	if err != nil {
+		zap.L().Error("write error", zap.Error(err))
+		return
+	}
 }
 
 func (h *URLHandler) stats(w http.ResponseWriter, r *http.Request) {
@@ -209,6 +232,7 @@ func (h *URLHandler) closeBody(body io.ReadCloser) {
 	}
 }
 
+/*
 func xMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -264,6 +288,93 @@ func xMiddleware(next http.Handler) http.Handler {
 			zap.Int("status", ww.Status()),
 			zap.Int("bytes", ww.BytesWritten()))
 	})
+}
+
+*/
+
+func CompressionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ow := w
+
+		// Обработка сжатия ответа
+		if shouldCompressResponse(r) {
+			cw := newCompressWriter(w)
+			ow = cw
+			defer func(cw *compressWriter) {
+				errCw := cw.Close()
+				if errCw != nil {
+					zap.L().Error("error closing compress writer", zap.Error(errCw))
+				}
+			}(cw)
+		}
+
+		// Обработка распаковки
+		if shouldDecompressRequest(r) {
+			cr, err := newCompressReader(r.Body)
+			if err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			r.Body = cr
+			defer func(cr *compressReader) {
+				errCr := cr.Close()
+				if errCr != nil {
+					zap.L().Error("error closing compress reader", zap.Error(errCr))
+				}
+			}(cr)
+		}
+
+		next.ServeHTTP(ow, r)
+	})
+}
+
+func LoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Используем WrapResponseWriter для получения статуса и размера ответа
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		next.ServeHTTP(ww, r)
+
+		duration := time.Since(start)
+
+		// Логирование запроса
+		logRequest(r, duration)
+		// Логирование ответа
+		logResponse(ww)
+	})
+}
+
+func logRequest(r *http.Request, duration time.Duration) {
+	zap.L().Info("request",
+		zap.String("path", r.URL.Path),
+		zap.String("method", r.Method),
+		zap.Duration("duration", duration))
+}
+
+func logResponse(ww middleware.WrapResponseWriter) {
+	zap.L().Info("response",
+		zap.Int("status", ww.Status()),
+		zap.Int("bytes", ww.BytesWritten()))
+}
+
+// shouldCompressResponse проверяет, нужно ли сжимать ответ
+func shouldCompressResponse(r *http.Request) bool {
+	supportsGzip := strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")
+	contentType := r.Header.Get("Content-Type")
+	supportedContentType := contentType == "text/plain" || contentType == "application/json"
+
+	return supportsGzip && supportedContentType
+}
+
+// shouldDecompressRequest проверяет, нужно ли распаковывать запрос
+func shouldDecompressRequest(r *http.Request) bool {
+	contentType := r.Header.Get("Content-Type")
+	supportedContentType := contentType == "text/plain" || contentType == "application/json"
+	contentEncoding := r.Header.Get("Content-Encoding")
+	sendsGzip := strings.Contains(contentEncoding, "gzip")
+
+	return supportedContentType && sendsGzip
 }
 
 // compressWriter реализует интерфейс http.ResponseWriter и позволяет прозрачно для сервера

@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"github.com/skiphead/practicum/infra/client/postgresql"
 	"github.com/skiphead/practicum/infra/config"
 	"github.com/skiphead/practicum/internal/delivery"
 	"github.com/skiphead/practicum/internal/delivery/handler"
+	"github.com/skiphead/practicum/internal/domain/repository"
+	"github.com/skiphead/practicum/internal/usecase"
 	"github.com/skiphead/practicum/pkg/storage"
 	"go.uber.org/zap"
 	"log"
@@ -39,7 +42,11 @@ func main() {
 		zap.L().Panic("storage initialization failed", zap.Error(err))
 	}
 
-	handler := handlers.NewURLHandler(store, cfg.ServerAddr, cfg.BaseURL)
+	pool := postgresql.Conn(cfg.DatabaseDSN)
+
+	repoHealth := repository.NewHealthRepository(pool)
+
+	handler := handlers.NewURLHandler(store, cfg.ServerAddr, cfg.BaseURL, *usecase.NewHealthUseCase(repoHealth))
 
 	srv, errNewServe := delivery.NewServerChi(cfg, handler.ChiMux())
 	if errNewServe != nil {

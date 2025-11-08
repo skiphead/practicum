@@ -16,9 +16,10 @@ func LoadConfig(configPath string) (*Config, error) {
 		}
 	}
 
-	var flagServerAddr, flagBaseURL, flagFileStoragePath string
+	var flagServerAddr, flagBaseURL, flagFileStoragePath, flagDataBaseDSN string
 	flag.StringVar(&flagServerAddr, "a", "", "Порт для запуска сервера")
 	flag.StringVar(&flagBaseURL, "b", "", "Базовый адрес результирующего сокращённого URL")
+	flag.StringVar(&flagDataBaseDSN, "d", "", "Путь до файла хранилища")
 	flag.StringVar(&flagFileStoragePath, "f", "", "Путь до файла хранилища")
 	flag.Parse()
 
@@ -34,6 +35,9 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 	if env := os.Getenv("SERVER_ADDRESS"); env != "" {
 		config.ServerAddr = env
+	}
+	if env := os.Getenv("DATABASE_DSN"); env != "" {
+		config.DatabaseDSN = env
 	}
 	if env := os.Getenv("FILE_STORAGE_PATH"); env != "" {
 		config.FileStoragePath = env
