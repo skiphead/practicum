@@ -18,8 +18,8 @@ func TestNewServer(t *testing.T) {
 	memoryStorage, _ := storage.NewCachedFileStorage("tests/test.json")
 	pool := postgresql.SafeConn(cfg.DatabaseDSN)
 
-	repoHealth := repository.NewHealthRepository(pool)
-	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr, cfg.BaseURL, *usecase.NewHealthUseCase(repoHealth))
+	repoStorage := repository.NewStorageRepository(pool)
+	handler := handlers.NewURLHandler(*usecase.NewStorage(memoryStorage, repoStorage), cfg.ServerAddr, cfg.BaseURL)
 
 	server, err := NewServerChi(cfg, handler.ChiMux())
 	if err != nil {
@@ -36,8 +36,8 @@ func TestNewServer_InvalidConfig(t *testing.T) {
 	memoryStorage, _ := storage.NewCachedFileStorage("test.json")
 	pool := postgresql.SafeConn(cfg.DatabaseDSN)
 
-	repoHealth := repository.NewHealthRepository(pool)
-	handler := handlers.NewURLHandler(memoryStorage, cfg.ServerAddr, cfg.BaseURL, *usecase.NewHealthUseCase(repoHealth))
+	repoStorage := repository.NewStorageRepository(pool)
+	handler := handlers.NewURLHandler(*usecase.NewStorage(memoryStorage, repoStorage), cfg.ServerAddr, cfg.BaseURL)
 
 	_, err := NewServerChi(cfg, handler.ChiMux())
 	if err == nil {
