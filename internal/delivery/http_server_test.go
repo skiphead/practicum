@@ -18,7 +18,7 @@ func TestNewServer(t *testing.T) {
 	pool := postgresql.SafeConn(cfg.DatabaseDSN)
 
 	repoStorage := repository.NewStorageRepository(pool)
-	handler := handlers.NewURLHandler(*usecase.NewStorageUseCase("http://localhost", memoryStorage, repoStorage), cfg.ServerAddr, cfg.BaseURL)
+	handler := handlers.NewURLHandler(usecase.NewStorageUseCase("http://localhost", memoryStorage, repoStorage), cfg.ServerAddr, cfg.BaseURL)
 
 	server, err := NewServerChi(cfg, handler.ChiMux())
 	if err != nil {
@@ -36,7 +36,7 @@ func TestNewServer_InvalidConfig(t *testing.T) {
 	pool := postgresql.SafeConn(cfg.DatabaseDSN)
 
 	repoStorage := repository.NewStorageRepository(pool)
-	handler := handlers.NewURLHandler(*usecase.NewStorageUseCase("http://localhost", memoryStorage, repoStorage), cfg.ServerAddr, cfg.BaseURL)
+	handler := handlers.NewURLHandler(usecase.NewStorageUseCase("http://localhost", memoryStorage, repoStorage), cfg.ServerAddr, cfg.BaseURL)
 
 	_, err := NewServerChi(cfg, handler.ChiMux())
 	if err == nil {
