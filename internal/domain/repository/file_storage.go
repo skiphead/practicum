@@ -28,7 +28,7 @@ type FileStorage interface {
 // URLRecord представляет структуру хранимых данных URL
 type URLRecord struct {
 	UUID          string    `json:"uuid"`
-	CorrelationId string    `json:"correlation_id"`
+	CorrelationID string    `json:"correlation_id"`
 	ShortURL      string    `json:"short_url"`
 	OriginalURL   string    `json:"original_url"`
 	CreatedAt     time.Time `json:"created_at"`
@@ -120,7 +120,7 @@ func (s *cachedFileStorage) Save(correlationID, key, url string) error {
 
 	record := &URLRecord{
 		UUID:          id,
-		CorrelationId: correlationID,
+		CorrelationID: correlationID,
 		ShortURL:      key,
 		OriginalURL:   url,
 		CreatedAt:     time.Now(),
@@ -148,7 +148,7 @@ func (s *cachedFileStorage) BatchSave(ctx context.Context, in []entity.ShortURL)
 			id := uuid.New().String()
 			record := &URLRecord{
 				UUID:          id,
-				CorrelationId: i.CorrelationID,
+				CorrelationID: i.CorrelationID,
 				ShortURL:      i.ShortCode,
 				OriginalURL:   i.OriginalURL,
 				CreatedAt:     time.Now(),
