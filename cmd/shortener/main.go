@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/skiphead/practicum/infra/client/postgresql"
 	"github.com/skiphead/practicum/infra/config"
 	"github.com/skiphead/practicum/internal/delivery"
 	"github.com/skiphead/practicum/internal/delivery/handler"
@@ -48,10 +50,19 @@ func main() {
 	if connErr != nil {
 		zap.L().Error("pgxpool initialization failed", zap.Error(connErr))
 	}
+	if pool.Ping(context.Background()) == nil {
+		db := stdlib.OpenDBFromPool(pool)
+		if err = postgresql.Migrations(db, "migrations"); err != nil {
+			zap.L().Error("postgresql migration failed", zap.Error(err))
+		}
+	}
 
-	repoHealth := repository.NewHealthRepository(pool)
+	storageRepo := repository.NewStorageRepository(pool)
 
-	handler := handlers.NewURLHandler(store, cfg.ServerAddr, cfg.BaseURL, *usecase.NewHealthUseCase(repoHealth))
+	handler := handlers.NewURLHandler(
+		*usecase.NewStorage(store, storageRepo),
+		cfg.ServerAddr,
+		cfg.BaseURL)
 
 	srv, errNewServe := delivery.NewServerChi(cfg, handler.ChiMux())
 	if errNewServe != nil {

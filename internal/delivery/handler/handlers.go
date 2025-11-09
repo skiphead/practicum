@@ -10,7 +10,6 @@ import (
 	"github.com/go-chi/render"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/internal/usecase"
-	"github.com/skiphead/practicum/pkg/storage"
 	"github.com/skiphead/practicum/pkg/utils"
 	"go.uber.org/zap"
 	"io"
@@ -29,18 +28,16 @@ const (
 )
 
 type URLHandler struct {
-	storage    storage.Storage
-	health     *usecase.HealthUseCase
+	storage    usecase.Storage
 	serverAddr string
 	baseURL    string
 }
 
-func NewURLHandler(storage storage.Storage, serverAddr, baseURL string, health usecase.HealthUseCase) *URLHandler {
+func NewURLHandler(storage usecase.Storage, serverAddr, baseURL string) *URLHandler {
 	return &URLHandler{
 		storage:    storage,
 		serverAddr: serverAddr,
 		baseURL:    baseURL,
-		health:     &health,
 	}
 }
 
@@ -51,7 +48,6 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 	r.Use(LoggingMiddleware)
 	r.Use(render.SetContentType(render.ContentTypeJSON))
 	r.Get("/{key}", h.redirectURL)
-	r.Get("/stats", h.stats)
 	r.Post("/", h.createShortURL)
 	r.Post("/api/shorten", h.createShortAPIURL)
 	r.Get("/ping", h.pingDB)
@@ -62,7 +58,7 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 func (h *URLHandler) pingDB(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), time.Second*5)
 	defer cancel()
-	err := h.health.Health(ctx)
+	err := h.storage.Ping(ctx)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		_, err = w.Write([]byte(err.Error()))
@@ -79,18 +75,6 @@ func (h *URLHandler) pingDB(w http.ResponseWriter, r *http.Request) {
 		zap.L().Error("write error", zap.Error(err))
 		return
 	}
-}
-
-func (h *URLHandler) stats(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	if r.Header.Get("Content-Type") != "application/json" {
-		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
-		return
-	}
-
-	w.WriteHeader(http.StatusCreated)
-	render.JSON(w, r, h.storage.Stats())
 }
 
 func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
@@ -160,10 +144,17 @@ func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter
 	if err := h.validateURL(originalURL, w); err != nil {
 		return "", err
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	key := h.generateRandomKey()
 
-	key := h.generateUniqueKey()
-	h.storage.Save(key, originalURL)
-	return h.buildShortURL(key), nil
+	resp, err := h.storage.Save(ctx, key, originalURL)
+	if err != nil {
+		return "", err
+	}
+
+	//h.storage.Save(key, originalURL)
+	return h.buildShortURL(resp.ShortCode), nil
 }
 
 // validateURL унифицированная валидация URL
@@ -201,26 +192,18 @@ func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
-
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
 	key := r.URL.Path[1:]
-	data, exists, _ := h.storage.Get(key)
+	data, err := h.storage.Get(ctx, key)
 
-	if !exists {
-		http.Error(w, "Short URL not found", http.StatusNotFound)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Location", data.OriginalURL)
 	w.WriteHeader(http.StatusTemporaryRedirect)
-}
-
-func (h *URLHandler) generateUniqueKey() string {
-	for {
-		key := h.generateRandomKey()
-		if _, exists, _ := h.storage.Get(key); !exists {
-			return key
-		}
-	}
 }
 
 func (h *URLHandler) generateRandomKey() string {
@@ -237,66 +220,6 @@ func (h *URLHandler) closeBody(body io.ReadCloser) {
 		log.Printf("error close Body: %v", err)
 	}
 }
-
-/*
-func xMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		ow := w
-
-		// Унифицированная обработка сжатия
-		supportsGzip := strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")
-
-		contentType := r.Header.Get("Content-Type")
-		supportedContentType := contentType == "text/plain" || contentType == "application/json"
-
-		if supportedContentType {
-			if supportsGzip {
-				cw := newCompressWriter(w)
-				ow = cw
-				defer func(cw *compressWriter) {
-					errCw := cw.Close()
-					if errCw != nil {
-						zap.L().Error("error closing compress writer", zap.Error(errCw))
-					}
-				}(cw)
-			}
-
-			contentEncoding := r.Header.Get("Content-Encoding")
-			sendsGzip := strings.Contains(contentEncoding, "gzip")
-			if sendsGzip {
-				cr, err := newCompressReader(r.Body)
-				if err != nil {
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-				r.Body = cr
-				defer func(cr *compressReader) {
-					errCr := cr.Close()
-					if errCr != nil {
-						zap.L().Error("error closing compress writer", zap.Error(errCr))
-					}
-				}(cr)
-			}
-		}
-
-		ww := middleware.NewWrapResponseWriter(ow, r.ProtoMajor)
-		next.ServeHTTP(ww, r)
-
-		duration := time.Since(start)
-
-		// Объединенное логирование запроса и ответа
-		zap.L().Info("request",
-			zap.String("path", r.URL.Path),
-			zap.String("method", r.Method),
-			zap.Duration("duration", duration))
-		zap.L().Info("response",
-			zap.Int("status", ww.Status()),
-			zap.Int("bytes", ww.BytesWritten()))
-	})
-}
-
-*/
 
 func CompressionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

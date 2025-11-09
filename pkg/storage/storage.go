@@ -1,12 +1,14 @@
 package storage
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
-	"go.uber.org/zap"
 	"os"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 
 	"github.com/google/uuid"
 )
@@ -55,16 +57,51 @@ func NewCachedFileStorage(path string) (Storage, error) {
 
 // loadCacheFromFile загрузка данных из файла в кэш
 func (s *cachedFileStorage) loadCacheFromFile() error {
-	records, err := s.readAllRecordsFromFile()
+	file, err := os.OpenFile(s.pathDB, os.O_RDONLY|os.O_CREATE, 0644)
 	if err != nil {
-		return err
+		return fmt.Errorf("error opening file: %w", err)
+	}
+	defer func(file *os.File) {
+		errCloseFile := file.Close()
+		if errCloseFile != nil {
+			zap.L().Warn("failed to close file", zap.Error(errCloseFile))
+		}
+	}(file)
+
+	// Проверяем, пуст ли файл
+	info, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("error getting file info: %w", err)
+	}
+	if info.Size() == 0 {
+		return nil
 	}
 
-	// Заполняем кэш
-	for i := range records {
-		record := &records[i]
-		s.cache[record.ShortURL] = record
-		s.cacheByID[record.UUID] = record
+	scanner := bufio.NewScanner(file)
+	lineNumber := 0
+	for scanner.Scan() {
+		lineNumber++
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue // Пропускаем пустые строки
+		}
+
+		var record URLRecord
+		if err := json.Unmarshal(line, &record); err != nil {
+			zap.L().Warn("failed to parse JSON line",
+				zap.Int("line", lineNumber),
+				zap.Error(err),
+				zap.String("content", string(line)))
+			continue
+		}
+
+		// Заполняем кэш
+		s.cache[record.ShortURL] = &record
+		s.cacheByID[record.UUID] = &record
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error scanning file: %w", err)
 	}
 
 	return nil
@@ -89,8 +126,33 @@ func (s *cachedFileStorage) Save(key, url string) error {
 	s.cache[key] = record
 	s.cacheByID[id] = record
 
-	// Сохраняем в файл
-	return s.saveRecordToFile(record)
+	// Сохраняем в файл в формате JSONL
+	return s.appendRecordToFile(record)
+}
+
+// appendRecordToFile добавляет запись в конец файла в формате JSONL
+func (s *cachedFileStorage) appendRecordToFile(record *URLRecord) error {
+	file, err := os.OpenFile(s.pathDB, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		return fmt.Errorf("error opening file: %w", err)
+	}
+	defer func(file *os.File) {
+		errCloseFile := file.Close()
+		if errCloseFile != nil {
+			zap.L().Warn("failed to close file", zap.Error(errCloseFile))
+		}
+	}(file)
+
+	data, err := json.Marshal(record)
+	if err != nil {
+		return fmt.Errorf("error marshaling record: %w", err)
+	}
+
+	if _, err := file.Write(append(data, '\n')); err != nil {
+		return fmt.Errorf("error writing to file: %w", err)
+	}
+
+	return nil
 }
 
 // Get получает URL по ключу из кэша
@@ -117,87 +179,6 @@ func (s *cachedFileStorage) GetByID(id string) (*URLRecord, error) {
 	return record, nil
 }
 
-// saveRecordToFile сохраняет/обновляет запись в файле
-func (s *cachedFileStorage) saveRecordToFile(record *URLRecord) error {
-	// Читаем все записи из файла
-	records, err := s.readAllRecordsFromFile()
-	if err != nil {
-		return err
-	}
-
-	// Проверяем, существует ли уже такой shortURL
-	found := false
-	for i, r := range records {
-		if r.ShortURL == record.ShortURL {
-			// Обновляем существующую запись
-			records[i] = *record
-			found = true
-			break
-		}
-	}
-
-	// Если не нашли, добавляем новую запись
-	if !found {
-		records = append(records, *record)
-	}
-
-	// Записываем обратно в файл
-	return s.writeAllRecordsToFile(records)
-}
-
-// readAllRecordsFromFile читает все записи из файла
-func (s *cachedFileStorage) readAllRecordsFromFile() ([]URLRecord, error) {
-	file, err := os.OpenFile(s.pathDB, os.O_RDONLY|os.O_CREATE, 0644)
-	if err != nil {
-		return nil, fmt.Errorf("error opening file: %w", err)
-	}
-	defer func(file *os.File) {
-		errCloseFile := file.Close()
-		if errCloseFile != nil {
-			zap.L().Warn("failed to close file", zap.Error(errCloseFile))
-		}
-	}(file)
-
-	// Проверяем, пуст ли файл
-	info, errStat := file.Stat()
-	if errStat != nil {
-		return nil, fmt.Errorf("error getting file info: %w", errStat)
-	}
-	if info.Size() == 0 {
-		return []URLRecord{}, nil
-	}
-
-	var records []URLRecord
-	decoder := json.NewDecoder(file)
-	if errDecode := decoder.Decode(&records); errDecode != nil {
-		return nil, fmt.Errorf("error decoding JSON: %w", errDecode)
-	}
-
-	return records, nil
-}
-
-// writeAllRecordsToFile записывает все записи в файл
-func (s *cachedFileStorage) writeAllRecordsToFile(records []URLRecord) error {
-	file, err := os.OpenFile(s.pathDB, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
-	if err != nil {
-		return fmt.Errorf("error opening file: %w", err)
-	}
-	defer func(file *os.File) {
-		errCloseFile := file.Close()
-		if errCloseFile != nil {
-			zap.L().Warn("failed to close file", zap.Error(errCloseFile))
-		}
-	}(file)
-
-	encoder := json.NewEncoder(file)
-	encoder.SetIndent("", "  ")
-	if errEncode := encoder.Encode(records); errEncode != nil {
-		return fmt.Errorf("error encoding records: %w", errEncode)
-	}
-
-	return nil
-}
-
 // Delete удаляет запись по shortURL из кэша и файла
 func (s *cachedFileStorage) Delete(shortURL string) error {
 	s.mu.Lock()
@@ -213,7 +194,7 @@ func (s *cachedFileStorage) Delete(shortURL string) error {
 	delete(s.cacheByID, record.UUID)
 
 	// Обновляем файл
-	return s.rewriteFileWithoutRecord(shortURL)
+	return s.rewriteFileWithoutDeletedRecords()
 }
 
 // DeleteByID удаляет запись по UUID из кэша и файла
@@ -231,25 +212,37 @@ func (s *cachedFileStorage) DeleteByID(id string) error {
 	delete(s.cacheByID, id)
 
 	// Обновляем файл
-	return s.rewriteFileWithoutRecord(record.ShortURL)
+	return s.rewriteFileWithoutDeletedRecords()
 }
 
-// rewriteFileWithoutRecord перезаписывает файл без указанной записи
-func (s *cachedFileStorage) rewriteFileWithoutRecord(shortURL string) error {
-	records, err := s.readAllRecordsFromFile()
+// rewriteFileWithoutDeletedRecords перезаписывает файл только с активными записями
+func (s *cachedFileStorage) rewriteFileWithoutDeletedRecords() error {
+	file, err := os.OpenFile(s.pathDB, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		return fmt.Errorf("error reading from file: %w", err)
+		return fmt.Errorf("error opening file: %w", err)
 	}
+	defer func(file *os.File) {
+		errCloseFile := file.Close()
+		if errCloseFile != nil {
+			zap.L().Warn("failed to close file", zap.Error(errCloseFile))
+		}
+	}(file)
 
-	// Создаем новый срез без удаляемой записи
-	var newRecords []URLRecord
-	for _, record := range records {
-		if record.ShortURL != shortURL {
-			newRecords = append(newRecords, record)
+	writer := bufio.NewWriter(file)
+	defer writer.Flush()
+
+	// Записываем все активные записи из кэша
+	for _, record := range s.cache {
+		data, err := json.Marshal(record)
+		if err != nil {
+			return fmt.Errorf("error marshaling record: %w", err)
+		}
+		if _, err := writer.Write(append(data, '\n')); err != nil {
+			return fmt.Errorf("error writing to file: %w", err)
 		}
 	}
 
-	return s.writeAllRecordsToFile(newRecords)
+	return nil
 }
 
 // FindByOriginalURL ищет запись по оригинальному URL в кэше
