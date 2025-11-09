@@ -10,7 +10,6 @@ import (
 	"github.com/skiphead/practicum/internal/delivery/handler"
 	"github.com/skiphead/practicum/internal/domain/repository"
 	"github.com/skiphead/practicum/internal/usecase"
-	"github.com/skiphead/practicum/pkg/storage"
 	"go.uber.org/zap"
 	"log"
 	"os"
@@ -39,7 +38,7 @@ func main() {
 			zap.Error(err))
 	}
 
-	store, err := storage.NewCachedFileStorage(cfg.FileStoragePath)
+	store, err := repository.NewCachedFileStorage(cfg.FileStoragePath)
 	if err != nil {
 		zap.L().Panic("storage initialization failed", zap.Error(err))
 	}
@@ -60,7 +59,7 @@ func main() {
 	storageRepo := repository.NewStorageRepository(pool)
 
 	handler := handlers.NewURLHandler(
-		*usecase.NewStorage(store, storageRepo),
+		usecase.NewStorageUseCase(cfg.BaseURL, store, storageRepo),
 		cfg.ServerAddr,
 		cfg.BaseURL)
 

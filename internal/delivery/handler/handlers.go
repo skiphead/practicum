@@ -14,26 +14,22 @@ import (
 	"go.uber.org/zap"
 	"io"
 	"log"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 )
 
-const (
-	keyLength     = 8
-	randomCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	schema        = `http`
-)
+//const schema = `http`
 
 type URLHandler struct {
-	storage    usecase.Storage
+	storage    usecase.URLUseCase
 	serverAddr string
 	baseURL    string
 }
 
-func NewURLHandler(storage usecase.Storage, serverAddr, baseURL string) *URLHandler {
+func NewURLHandler(storage usecase.URLUseCase, serverAddr, baseURL string) *URLHandler {
+
 	return &URLHandler{
 		storage:    storage,
 		serverAddr: serverAddr,
@@ -50,6 +46,7 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 	r.Get("/{key}", h.redirectURL)
 	r.Post("/", h.createShortURL)
 	r.Post("/api/shorten", h.createShortAPIURL)
+	r.Post("/api/shorten/batch", h.createBatchShortAPIURL)
 	r.Get("/ping", h.pingDB)
 
 	return r
@@ -107,6 +104,38 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, map[string]string{"result": shortURL})
 }
 
+func (h *URLHandler) createBatchShortAPIURL(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Header.Get("Content-Type") != "application/json" {
+		http.Error(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+		return
+	}
+
+	body, err := h.readRequestBody(r)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	var original []entity.BatchShortenRequest
+	if err := json.Unmarshal(body, &original); err != nil {
+		zap.L().Error("unmarshal error", zap.Error(err))
+		http.Error(w, "URL is required", http.StatusBadRequest)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*5)
+	defer cancel()
+
+	shortURL, err := h.storage.BatchSave(ctx, original)
+	if err != nil {
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	render.JSON(w, r, shortURL)
+}
+
 func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	body, err := h.readRequestBody(r)
 	if err != nil {
@@ -146,9 +175,9 @@ func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	key := h.generateRandomKey()
+	//key := h.generateRandomKey()
 
-	resp, err := h.storage.Save(ctx, key, originalURL)
+	resp, err := h.storage.Save(ctx, originalURL)
 	if err != nil {
 		return "", err
 	}
@@ -180,11 +209,8 @@ func (h *URLHandler) validateURL(originalURL string, w http.ResponseWriter) erro
 
 // buildShortURL создает короткий URL на основе ключа
 func (h *URLHandler) buildShortURL(key string) string {
-	if h.baseURL != "" {
-		return fmt.Sprintf("%s/%s", h.baseURL, key)
-	}
 
-	return fmt.Sprintf("%s://%s/%s", schema, h.serverAddr, key)
+	return fmt.Sprintf("%s/%s", h.baseURL, key)
 }
 
 func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
@@ -204,14 +230,6 @@ func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Location", data.OriginalURL)
 	w.WriteHeader(http.StatusTemporaryRedirect)
-}
-
-func (h *URLHandler) generateRandomKey() string {
-	buf := make([]byte, keyLength)
-	for i := range buf {
-		buf[i] = randomCharset[rand.Intn(len(randomCharset))]
-	}
-	return string(buf)
 }
 
 // closeBody унифицированное закрытие тела запроса

@@ -8,6 +8,8 @@ import (
 	"os"
 )
 
+const schema = "http"
+
 func LoadConfig(configPath string) (*Config, error) {
 	config := &Config{}
 
@@ -55,6 +57,11 @@ func LoadConfig(configPath string) (*Config, error) {
 	if config.ServerAddr == "" {
 		config.ServerAddr = "localhost:8080"
 	}
+
+	if config.BaseURL == "" {
+		config.BaseURL = fmt.Sprintf("%s://%s", schema, config.ServerAddr)
+	}
+
 	if config.FileStoragePath == "" {
 		config.FileStoragePath = "data.json"
 	}

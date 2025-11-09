@@ -1,9 +1,11 @@
-package storage
+package repository
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/skiphead/practicum/internal/domain/entity"
 	"os"
 	"sync"
 	"time"
@@ -13,8 +15,8 @@ import (
 	"github.com/google/uuid"
 )
 
-type Storage interface {
-	Save(key, url string) error
+type FileStorage interface {
+	Save(correlationID, key, url string) error
 	Get(key string) (*URLRecord, bool, error)
 	GetByID(id string) (*URLRecord, error)
 	FindByOriginalURL(originalURL string) (*URLRecord, error)
@@ -25,10 +27,11 @@ type Storage interface {
 
 // URLRecord представляет структуру хранимых данных URL
 type URLRecord struct {
-	UUID        string    `json:"uuid"`
-	ShortURL    string    `json:"short_url"`
-	OriginalURL string    `json:"original_url"`
-	CreatedAt   time.Time `json:"created_at"`
+	UUID          string    `json:"uuid"`
+	CorrelationId string    `json:"correlation_id"`
+	ShortURL      string    `json:"short_url"`
+	OriginalURL   string    `json:"original_url"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // CachedFileStorage хранит URL в файле с in-memory кэшем
@@ -40,7 +43,7 @@ type cachedFileStorage struct {
 }
 
 // NewCachedFileStorage создает новый экземпляр CachedFileStorage
-func NewCachedFileStorage(path string) (Storage, error) {
+func NewCachedFileStorage(path string) (FileStorage, error) {
 	storage := &cachedFileStorage{
 		pathDB:    path,
 		cache:     make(map[string]*URLRecord),
@@ -108,7 +111,7 @@ func (s *cachedFileStorage) loadCacheFromFile() error {
 }
 
 // Save сохраняет URL-маппинг в файл и обновляет кэш
-func (s *cachedFileStorage) Save(key, url string) error {
+func (s *cachedFileStorage) Save(correlationID, key, url string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -116,10 +119,11 @@ func (s *cachedFileStorage) Save(key, url string) error {
 	id := uuid.New().String()
 
 	record := &URLRecord{
-		UUID:        id,
-		ShortURL:    key,
-		OriginalURL: url,
-		CreatedAt:   time.Now(),
+		UUID:          id,
+		CorrelationId: correlationID,
+		ShortURL:      key,
+		OriginalURL:   url,
+		CreatedAt:     time.Now(),
 	}
 
 	// Обновляем кэш
@@ -128,6 +132,39 @@ func (s *cachedFileStorage) Save(key, url string) error {
 
 	// Сохраняем в файл в формате JSONL
 	return s.appendRecordToFile(record)
+}
+
+// BatchSave сохраняет URL-маппинг с ID в файл и обновляет кэш
+func (s *cachedFileStorage) BatchSave(ctx context.Context, in []entity.ShortURL) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+		for _, i := range in {
+			// Генерируем UUID v4
+			id := uuid.New().String()
+			record := &URLRecord{
+				UUID:          id,
+				CorrelationId: i.CorrelationID,
+				ShortURL:      i.ShortCode,
+				OriginalURL:   i.OriginalURL,
+				CreatedAt:     time.Now(),
+			}
+
+			// Обновляем кэш
+			s.cache[i.ShortCode] = record
+			s.cacheByID[id] = record
+			err := s.appendRecordToFile(record)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 // appendRecordToFile добавляет запись в конец файла в формате JSONL

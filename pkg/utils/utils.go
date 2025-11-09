@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"math/rand"
 	"net/url"
 	"strings"
 )
@@ -22,4 +23,17 @@ func IsValidURL(s string) bool {
 	}
 
 	return true
+}
+
+const (
+	keyLength     = 8
+	randomCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+)
+
+func GenerateRandomKey() string {
+	buf := make([]byte, keyLength)
+	for i := range buf {
+		buf[i] = randomCharset[rand.Intn(len(randomCharset))]
+	}
+	return string(buf)
 }

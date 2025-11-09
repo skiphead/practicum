@@ -1,13 +1,13 @@
-package storage
+package repository
 
 import (
 	"path/filepath"
 	"testing"
 )
 
-// TestInterfaceCompliance проверяет что cachedFileStorage реализует весь интерфейс Storage
+// TestInterfaceCompliance проверяет что cachedFileStorage реализует весь интерфейс FileStorage
 func TestInterfaceCompliance(t *testing.T) {
-	var _ Storage = &cachedFileStorage{}
+	var _ FileStorage = &cachedFileStorage{}
 }
 
 // TestStorageConstructor проверяет конструктор и базовую функциональность
@@ -27,7 +27,7 @@ func TestStorageConstructor(t *testing.T) {
 	}
 
 	// Проверяем что можем вызывать все методы интерфейса
-	err = storage.Save("test", "https://test.com")
+	err = storage.Save("", "test", "https://test.com")
 	if err != nil {
 		t.Errorf("Save method failed: %v", err)
 	}
