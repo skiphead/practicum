@@ -11,7 +11,7 @@ const storageTableName = "shorts_url"
 
 type StorageRepository interface {
 	Ping(ctx context.Context) error
-	Create(ctx context.Context, shortCode, originalURl string) (*entity.ShortURL, error)
+	Create(ctx context.Context, shortCode, originalURL string) (*entity.ShortURL, error)
 	Get(ctx context.Context, shortCode string) (*entity.ShortURL, error)
 }
 
@@ -33,7 +33,7 @@ func (r *storageRepository) Ping(ctx context.Context) error {
 	return nil
 }
 
-func (r *storageRepository) Create(ctx context.Context, shortCode, originalURl string) (*entity.ShortURL, error) {
+func (r *storageRepository) Create(ctx context.Context, shortCode, originalURL string) (*entity.ShortURL, error) {
 
 	const sql = `INSERT INTO %s (short_code, original_url, expires_at) VALUES ($1, $2, NOW()) RETURNING 
                id, 
@@ -44,7 +44,7 @@ func (r *storageRepository) Create(ctx context.Context, shortCode, originalURl s
 
 	var s entity.ShortURL
 
-	err := r.db.QueryRow(ctx, query, shortCode, originalURl).
+	err := r.db.QueryRow(ctx, query, shortCode, originalURL).
 		Scan(&s.ID,
 			&s.OriginalURL,
 			&s.ShortCode,
