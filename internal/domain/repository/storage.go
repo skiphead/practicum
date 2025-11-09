@@ -96,11 +96,11 @@ func (r *storageRepository) Update(ctx context.Context) (*entity.ShortURL, error
 func (r *storageRepository) Delete(ctx context.Context, id string) (string, error) {
 	const sql = `DELETE FROM %s WHERE id = $1`
 	query := fmt.Sprintf(sql, r.table)
-	var resp string
-	err := r.db.QueryRow(ctx, query, id).Scan(&resp)
+	var respID string
+	err := r.db.QueryRow(ctx, query, id).Scan(&respID)
 	if err != nil {
 		return "", err
 	}
 
-	return resp, nil
+	return respID, nil
 }
