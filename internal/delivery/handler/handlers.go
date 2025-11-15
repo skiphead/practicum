@@ -100,7 +100,9 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := h.processAndSaveURL(original.URL, w)
 	if err != nil {
-		render.JSON(w, r, map[string]string{"result": shortURL})
+		if h.isDuplicateError(err) {
+			render.JSON(w, r, map[string]string{"result": shortURL})
+		}
 		return
 	}
 
@@ -157,8 +159,14 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	originalURL := string(body)
 	shortURL, err := h.processAndSaveURL(originalURL, w)
 	if err != nil {
+		if h.isDuplicateError(err) {
+			_, err = w.Write([]byte(shortURL))
+			if err != nil {
+				zap.L().Error("write error", zap.Error(err))
+				return
+			}
+		}
 		zap.L().Error("process error", zap.Error(err))
-		_, err = w.Write([]byte(shortURL))
 		return
 	}
 
