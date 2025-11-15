@@ -101,6 +101,7 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	shortURL, err := h.processAndSaveURL(original.URL, w)
 	if err != nil {
 		if h.isDuplicateError(err) {
+			render.Status(r, http.StatusConflict)
 			render.JSON(w, r, map[string]string{"result": shortURL})
 		}
 		return
@@ -108,6 +109,36 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	render.JSON(w, r, map[string]string{"result": shortURL})
+}
+
+func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
+	body, err := h.readRequestBody(r)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	originalURL := string(body)
+	shortURL, err := h.processAndSaveURL(originalURL, w)
+	if err != nil {
+		if h.isDuplicateError(err) {
+			http.Error(w, shortURL, http.StatusConflict)
+			if err != nil {
+				zap.L().Error("write error", zap.Error(err))
+				return
+			}
+
+		}
+		zap.L().Error("process error", zap.Error(err))
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	_, err = w.Write([]byte(shortURL))
+	if err != nil {
+		zap.L().Error("write error", zap.Error(err))
+		return
+	}
 }
 
 func (h *URLHandler) createBatchShortAPIURL(w http.ResponseWriter, r *http.Request) {
@@ -149,35 +180,6 @@ func (h *URLHandler) createBatchShortAPIURL(w http.ResponseWriter, r *http.Reque
 	render.JSON(w, r, shortURLs)
 }
 
-func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
-	body, err := h.readRequestBody(r)
-	if err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
-		return
-	}
-
-	originalURL := string(body)
-	shortURL, err := h.processAndSaveURL(originalURL, w)
-	if err != nil {
-		if h.isDuplicateError(err) {
-			_, err = w.Write([]byte(shortURL))
-			if err != nil {
-				zap.L().Error("write error", zap.Error(err))
-				return
-			}
-		}
-		zap.L().Error("process error", zap.Error(err))
-		return
-	}
-
-	w.WriteHeader(http.StatusCreated)
-	_, err = w.Write([]byte(shortURL))
-	if err != nil {
-		zap.L().Error("write error", zap.Error(err))
-		return
-	}
-}
-
 // readRequestBody унифицированное чтение тела запроса
 func (h *URLHandler) readRequestBody(r *http.Request) ([]byte, error) {
 	body, err := io.ReadAll(r.Body)
@@ -200,7 +202,6 @@ func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter
 	resp, err := h.storage.Save(ctx, originalURL)
 	if err != nil {
 		if h.isDuplicateError(err) {
-			http.Error(w, ErrDuplicateKey.Error(), http.StatusConflict)
 
 			shortURL, errGet := h.storage.GetByOriginalURL(ctx, originalURL)
 			if errGet != nil {
