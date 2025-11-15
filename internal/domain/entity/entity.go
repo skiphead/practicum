@@ -2,7 +2,18 @@ package entity
 
 import (
 	"database/sql"
+	"errors"
+	"net/url"
 	"time"
+)
+
+var (
+	ErrEmptyURL         = errors.New("URL не может быть пустым")
+	ErrInvalidURL       = errors.New("некорректный URL")
+	ErrEmptyResult      = errors.New("поле result не может быть пустым")
+	ErrEmptyCorrelation = errors.New("correlation_id не может быть пустым")
+	ErrEmptyShortCode   = errors.New("short_code не может быть пустым")
+	ErrInvalidExpiry    = errors.New("expires_at не может быть раньше created_at")
 )
 
 type ShortenRequest struct {
@@ -33,4 +44,60 @@ type ShortURL struct {
 	UserID        sql.NullInt64 `db:"user_id" json:"user_id,omitempty"`
 	IsActive      bool          `db:"is_active" json:"is_active"`
 	ClickCount    int64         `db:"click_count" json:"click_count"`
+}
+
+func (r *ShortenRequest) Validate() error {
+	if r.URL == "" {
+		return ErrEmptyURL
+	}
+	if _, err := url.ParseRequestURI(r.URL); err != nil {
+		return ErrInvalidURL
+	}
+	return nil
+}
+
+func (r *ShortenResponse) Validate() error {
+	if r.Result == "" {
+		return ErrEmptyResult
+	}
+	return nil
+}
+
+func (r *BatchShortenRequest) Validate() error {
+	if r.CorrelationID == "" {
+		return ErrEmptyCorrelation
+	}
+	if r.OriginalURL == "" {
+		return ErrEmptyURL
+	}
+	if _, err := url.ParseRequestURI(r.OriginalURL); err != nil {
+		return ErrInvalidURL
+	}
+	return nil
+}
+
+func (r *BatchShortenResponse) Validate() error {
+	if r.CorrelationID == "" {
+		return ErrEmptyCorrelation
+	}
+	if r.ShortURL == "" {
+		return ErrEmptyResult
+	}
+	return nil
+}
+
+func (s *ShortURL) Validate() error {
+	if s.OriginalURL == "" {
+		return ErrEmptyURL
+	}
+	if _, err := url.ParseRequestURI(s.OriginalURL); err != nil {
+		return ErrInvalidURL
+	}
+	if s.ShortCode == "" {
+		return ErrEmptyShortCode
+	}
+	if s.ExpiresAt.Valid && s.ExpiresAt.Time.Before(s.CreatedAt) {
+		return ErrInvalidExpiry
+	}
+	return nil
 }

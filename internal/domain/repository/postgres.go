@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	storageTableName = "shorts_url"
-	defaultBatchSize = 100
+	storageTableName   = "shorts_url"
+	defaultBatchSize   = 100
+	defaultExpiryYears = 1
 )
 
 var (
@@ -172,16 +173,14 @@ func (r *storageRepository) Create(ctx context.Context, shortCode, originalURL s
 // CreateBatch создает пакет коротких URL в транзакции с обработкой пакетами фиксированного размера.
 func (r *storageRepository) CreateBatch(
 	ctx context.Context,
-	in []entity.BatchShortenRequest,
+	requests []entity.BatchShortenRequest,
 	batchSize int,
 ) ([]entity.ShortURL, error) {
-	if len(in) == 0 {
+	if len(requests) == 0 {
 		return []entity.ShortURL{}, nil
 	}
 
-	if batchSize <= 0 {
-		batchSize = defaultBatchSize
-	}
+	effectiveBatchSize := r.getEffectiveBatchSize(batchSize)
 
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -189,26 +188,24 @@ func (r *storageRepository) CreateBatch(
 	}
 	defer r.rollbackTxOnError(ctx, tx, &err)
 
-	response := make([]entity.ShortURL, 0, len(in))
+	var allResults []entity.ShortURL
 
-	for start := 0; start < len(in); start += batchSize {
-		end := start + batchSize
-		if end > len(in) {
-			end = len(in)
-		}
+	for start := 0; start < len(requests); start += effectiveBatchSize {
+		end := min(start+effectiveBatchSize, len(requests))
+		batch := requests[start:end]
 
-		batchURLs, err := r.insertBatch(ctx, tx, in[start:end])
+		batchResults, err := r.insertBatch(ctx, tx, batch)
 		if err != nil {
 			return nil, fmt.Errorf("insert batch [%d:%d]: %w", start, end, err)
 		}
-		response = append(response, batchURLs...)
+		allResults = append(allResults, batchResults...)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("commit transaction: %w", err)
 	}
 
-	return response, nil
+	return allResults, nil
 }
 
 // rollbackTxOnError откатывает транзакцию если переданный error не nil
@@ -236,12 +233,13 @@ func (r *storageRepository) insertBatch(
 	placeholders := make([]string, 0, len(batch))
 	args := make([]interface{}, 0, len(batch)*4)
 
-	expiresAt := time.Now().AddDate(1, 0, 0)
+	expiresAt := r.calculateExpiryTime()
 
 	for i, item := range batch {
 		code := utils.GenerateRandomKey()
+		pos := i * 4
 		placeholders = append(placeholders,
-			fmt.Sprintf("($%d, $%d, $%d, $%d)", i*4+1, i*4+2, i*4+3, i*4+4))
+			fmt.Sprintf("($%d, $%d, $%d, $%d)", pos+1, pos+2, pos+3, pos+4))
 		args = append(args, item.CorrelationID, code, item.OriginalURL, expiresAt)
 	}
 
@@ -253,7 +251,12 @@ func (r *storageRepository) insertBatch(
 	}
 	defer rows.Close()
 
-	var result []entity.ShortURL
+	return r.scanBatchResults(rows)
+}
+
+func (r *storageRepository) scanBatchResults(rows pgx.Rows) ([]entity.ShortURL, error) {
+	var results []entity.ShortURL
+
 	for rows.Next() {
 		var url entity.ShortURL
 		if err := rows.Scan(
@@ -265,14 +268,14 @@ func (r *storageRepository) insertBatch(
 		); err != nil {
 			return nil, fmt.Errorf("scan row: %w", err)
 		}
-		result = append(result, url)
+		results = append(results, url)
 	}
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("rows iteration: %w", err)
 	}
 
-	return result, nil
+	return results, nil
 }
 
 // Get возвращает запись сокращенного URL по его короткому коду.
@@ -288,15 +291,12 @@ func (r *storageRepository) Get(ctx context.Context, shortCode string) (*entity.
 		&expiresAt,
 	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("short URL with code '%s' not found: %w", shortCode, ErrNotFound)
-		}
-		return nil, fmt.Errorf("get short URL by code '%s': %w", shortCode, err)
+		return r.handleQueryError(err, "short URL for original URL", shortCode)
 	}
 
 	// Проверяем срок действия
-	if time.Now().After(expiresAt) {
-		return nil, fmt.Errorf("short URL with code '%s' has expired", shortCode)
+	if err := r.validateExpiry(expiresAt, shortCode); err != nil {
+		return nil, err
 	}
 
 	return &shortURL, nil
@@ -315,15 +315,11 @@ func (r *storageRepository) GetByOriginalURL(ctx context.Context, originalURL st
 		&expiresAt,
 	)
 	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("short URL with code '%s' not found: %w", originalURL, ErrNotFound)
-		}
-		return nil, fmt.Errorf("get short URL by code '%s': %w", originalURL, err)
+		return r.handleQueryError(err, "short URL for original URL", originalURL)
 	}
-
 	// Проверяем срок действия
-	if time.Now().After(expiresAt) {
-		return nil, fmt.Errorf("short URL with code '%s' has expired", originalURL)
+	if err := r.validateExpiry(expiresAt, shortURL.ShortCode); err != nil {
+		return nil, err
 	}
 
 	return &shortURL, nil
@@ -367,4 +363,30 @@ func (r *storageRepository) Delete(ctx context.Context, id string) (string, erro
 	}
 
 	return deletedID, nil
+}
+
+// getEffectiveBatchSize determines the batch size to use
+func (r *storageRepository) getEffectiveBatchSize(requestedSize int) int {
+	if requestedSize <= 0 {
+		return defaultBatchSize
+	}
+	return requestedSize
+}
+
+func (r *storageRepository) calculateExpiryTime() time.Time {
+	return time.Now().AddDate(defaultExpiryYears, 0, 0)
+}
+
+func (r *storageRepository) handleQueryError(err error, entityDesc string, identifier string) (*entity.ShortURL, error) {
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("%s '%s': %w", entityDesc, identifier, ErrNotFound)
+	}
+	return nil, fmt.Errorf("query %s: %w", entityDesc, err)
+}
+
+func (r *storageRepository) validateExpiry(expiresAt time.Time, identifier string) error {
+	if time.Now().After(expiresAt) {
+		return fmt.Errorf("short URL with code '%s' has expired", identifier)
+	}
+	return nil
 }
