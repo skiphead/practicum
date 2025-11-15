@@ -122,7 +122,8 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	shortURL, err := h.processAndSaveURL(originalURL, w)
 	if err != nil {
 		if h.isDuplicateError(err) {
-			http.Error(w, shortURL, http.StatusConflict)
+			render.Status(r, http.StatusConflict)
+			render.JSON(w, r, shortURL)
 		}
 
 		zap.L().Error("process error", zap.Error(err))
