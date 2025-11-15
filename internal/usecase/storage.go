@@ -3,7 +3,6 @@ package usecase
 import (
 	"context"
 	"fmt"
-
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/internal/domain/repository"
 	"github.com/skiphead/practicum/pkg/utils"
@@ -12,6 +11,7 @@ import (
 type URLUseCase interface {
 	Ping(ctx context.Context) error
 	Get(ctx context.Context, shortCode string) (*entity.ShortURL, error)
+	GetByOriginalURL(ctx context.Context, originalURL string) (*entity.ShortURL, error)
 	Save(ctx context.Context, originalURL string) (*entity.ShortURL, error)
 	BatchSave(ctx context.Context, in []entity.BatchShortenRequest) ([]entity.BatchShortenResponse, error)
 }
@@ -93,6 +93,31 @@ func (s *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortUR
 
 	// Используем основное хранилище (базу данных)
 	shortURL, err := s.storageRepo.Get(ctx, shortCode)
+	if err != nil {
+		return nil, fmt.Errorf("get from database: %w", err)
+	}
+
+	return shortURL, nil
+}
+
+// GetByOriginalURL возвращает оригинальный URL по короткому коду
+func (s *urlUseCase) GetByOriginalURL(ctx context.Context, originalURL string) (*entity.ShortURL, error) {
+	if !s.isDatabaseAvailable(ctx) {
+		// Используем файловое хранилище как fallback
+		resp, err := s.fileStorage.FindByOriginalURL(originalURL)
+		if err != nil {
+			return nil, fmt.Errorf("get from file storage: %w", err)
+		}
+
+		return &entity.ShortURL{
+			ID:          resp.UUID,
+			OriginalURL: resp.OriginalURL,
+			ShortCode:   originalURL,
+		}, nil
+	}
+
+	// Используем основное хранилище (базу данных)
+	shortURL, err := s.storageRepo.GetByOriginalURL(ctx, originalURL)
 	if err != nil {
 		return nil, fmt.Errorf("get from database: %w", err)
 	}

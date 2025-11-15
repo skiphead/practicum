@@ -28,21 +28,110 @@ type URLRepository interface {
 	Create(ctx context.Context, shortCode, originalURL string) (*entity.ShortURL, error)
 	CreateBatch(ctx context.Context, in []entity.BatchShortenRequest, batchSize int) ([]entity.ShortURL, error)
 	Get(ctx context.Context, shortCode string) (*entity.ShortURL, error)
-	Update(ctx context.Context) (*entity.ShortURL, error)
+	GetByOriginalURL(ctx context.Context, originalURL string) (*entity.ShortURL, error)
+	Update(ctx context.Context, shortURL *entity.ShortURL) (*entity.ShortURL, error) // Исправлена сигнатура
 	Delete(ctx context.Context, id string) (string, error)
 }
 
 type storageRepository struct {
-	table   string
-	storage entity.ShortURL // Потенциальная проблема: состояние в репозитории
-	db      *pgxpool.Pool
+	table            string
+	createQuery      string
+	createBatchQuery string
+	getQuery         string
+	getByOriginalURL string
+	updateQuery      string
+	deleteQuery      string
+	db               *pgxpool.Pool
 }
 
-func NewStorageRepository(db *pgxpool.Pool) URLRepository {
-	return &storageRepository{
+type RepositoryConfig struct {
+	TableName string
+}
+
+type RepositoryOption func(*storageRepository)
+
+func WithTableName(tableName string) RepositoryOption {
+	return func(r *storageRepository) {
+		r.table = tableName
+	}
+}
+
+func NewStorageRepository(db *pgxpool.Pool, opts ...RepositoryOption) URLRepository {
+	repo := &storageRepository{
 		db:    db,
 		table: storageTableName,
 	}
+
+	// Применяем опции
+	for _, opt := range opts {
+		opt(repo)
+	}
+
+	// Инициализируем SQL-запросы после установки имени таблицы
+	repo.initQueries()
+
+	return repo
+}
+
+func (r *storageRepository) initQueries() {
+	r.createQuery = fmt.Sprintf(
+		`INSERT INTO %s (
+			short_code, 
+			original_url, 
+			expires_at
+		) VALUES ($1, $2, $3) 
+		RETURNING 
+			id, 
+			original_url, 
+			short_code, 
+			created_at`,
+		r.table,
+	)
+
+	r.createBatchQuery = `INSERT INTO %s (
+			correlation_id, 
+			short_code, 
+			original_url, 
+			expires_at
+		) VALUES %s 
+		RETURNING id, correlation_id, original_url, short_code, created_at`
+
+	r.getQuery = fmt.Sprintf(
+		`SELECT 
+			id, 
+			original_url, 
+			short_code, 
+			created_at,
+			expires_at
+		FROM %s 
+		WHERE short_code = $1`,
+		r.table,
+	)
+
+	r.getByOriginalURL = fmt.Sprintf(`SELECT 
+			id, 
+			original_url, 
+			short_code, 
+			created_at,
+			expires_at
+		FROM %s 
+		WHERE original_url = $1`,
+		r.table)
+
+	r.updateQuery = fmt.Sprintf(
+		`UPDATE %s 
+		SET original_url = $1, short_code = $2 
+		WHERE id = $3 
+		RETURNING id, original_url, short_code, created_at`,
+		r.table,
+	)
+
+	r.deleteQuery = fmt.Sprintf(
+		`DELETE FROM %s 
+		WHERE id = $1 
+		RETURNING id`,
+		r.table,
+	)
 }
 
 func (r *storageRepository) Ping(ctx context.Context) error {
@@ -60,26 +149,10 @@ func (r *storageRepository) Create(ctx context.Context, shortCode, originalURL s
 	}
 	defer r.rollbackTxOnError(ctx, tx, &err)
 
-	query := fmt.Sprintf(
-		`INSERT INTO %s (
-            short_code, 
-            original_url, 
-            expires_at
-        ) VALUES ($1, $2, $3) 
-        RETURNING 
-            id, 
-            original_url, 
-            short_code, 
-            created_at`,
-		r.table,
-	)
-
 	var shortURL entity.ShortURL
-
-	// Добавляем expiration time (например, 1 год)
 	expiresAt := time.Now().AddDate(1, 0, 0)
 
-	err = tx.QueryRow(ctx, query, shortCode, originalURL, expiresAt).Scan(
+	err = tx.QueryRow(ctx, r.createQuery, shortCode, originalURL, expiresAt).Scan(
 		&shortURL.ID,
 		&shortURL.OriginalURL,
 		&shortURL.ShortCode,
@@ -106,7 +179,6 @@ func (r *storageRepository) CreateBatch(
 		return []entity.ShortURL{}, nil
 	}
 
-	// Используем размер по умолчанию, если не указан
 	if batchSize <= 0 {
 		batchSize = defaultBatchSize
 	}
@@ -162,9 +234,8 @@ func (r *storageRepository) insertBatch(
 	}
 
 	placeholders := make([]string, 0, len(batch))
-	args := make([]interface{}, 0, len(batch)*4) // 4 параметра на запись
+	args := make([]interface{}, 0, len(batch)*4)
 
-	// Добавляем expiration time для всех записей
 	expiresAt := time.Now().AddDate(1, 0, 0)
 
 	for i, item := range batch {
@@ -174,17 +245,7 @@ func (r *storageRepository) insertBatch(
 		args = append(args, item.CorrelationID, code, item.OriginalURL, expiresAt)
 	}
 
-	query := fmt.Sprintf(
-		`INSERT INTO %s (
-            correlation_id, 
-            short_code, 
-            original_url, 
-            expires_at
-        ) VALUES %s 
-        RETURNING id, correlation_id, original_url, short_code, created_at`,
-		r.table,
-		strings.Join(placeholders, ", "),
-	)
+	query := fmt.Sprintf(r.createBatchQuery, r.table, strings.Join(placeholders, ", "))
 
 	rows, err := tx.Query(ctx, query, args...)
 	if err != nil {
@@ -216,22 +277,10 @@ func (r *storageRepository) insertBatch(
 
 // Get возвращает запись сокращенного URL по его короткому коду.
 func (r *storageRepository) Get(ctx context.Context, shortCode string) (*entity.ShortURL, error) {
-	query := fmt.Sprintf(
-		`SELECT 
-            id, 
-            original_url, 
-            short_code, 
-            created_at,
-            expires_at
-        FROM %s 
-        WHERE short_code = $1`,
-		r.table,
-	)
-
 	var shortURL entity.ShortURL
 	var expiresAt time.Time
 
-	err := r.db.QueryRow(ctx, query, shortCode).Scan(
+	err := r.db.QueryRow(ctx, r.getQuery, shortCode).Scan(
 		&shortURL.ID,
 		&shortURL.OriginalURL,
 		&shortURL.ShortCode,
@@ -253,50 +302,63 @@ func (r *storageRepository) Get(ctx context.Context, shortCode string) (*entity.
 	return &shortURL, nil
 }
 
-// Update обновляет существующую запись сокращенного URL в базе данных.
-func (r *storageRepository) Update(ctx context.Context) (*entity.ShortURL, error) {
-	query := fmt.Sprintf(
-		`UPDATE %s 
-         SET original_url = $1, short_code = $2 
-         WHERE id = $3 
-         RETURNING id, original_url, short_code, created_at`,
-		r.table,
-	)
-
+// GetByOriginalURL возвращает запись сокращенного URL по его оригинальной ссылке.
+func (r *storageRepository) GetByOriginalURL(ctx context.Context, originalURL string) (*entity.ShortURL, error) {
 	var shortURL entity.ShortURL
-	err := r.db.QueryRow(
-		ctx,
-		query,
-		r.storage.OriginalURL,
-		r.storage.ShortCode,
-		r.storage.ID,
-	).Scan(
+	var expiresAt time.Time
+
+	err := r.db.QueryRow(ctx, r.getByOriginalURL, originalURL).Scan(
 		&shortURL.ID,
 		&shortURL.OriginalURL,
 		&shortURL.ShortCode,
 		&shortURL.CreatedAt,
+		&expiresAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, fmt.Errorf("short URL with id '%s' not found: %w", r.storage.ID, ErrNotFound)
+			return nil, fmt.Errorf("short URL with code '%s' not found: %w", originalURL, ErrNotFound)
 		}
-		return nil, fmt.Errorf("update short URL: %w", err)
+		return nil, fmt.Errorf("get short URL by code '%s': %w", originalURL, err)
+	}
+
+	// Проверяем срок действия
+	if time.Now().After(expiresAt) {
+		return nil, fmt.Errorf("short URL with code '%s' has expired", originalURL)
 	}
 
 	return &shortURL, nil
 }
 
+// Update обновляет существующую запись сокращенного URL в базе данных.
+func (r *storageRepository) Update(ctx context.Context, shortURL *entity.ShortURL) (*entity.ShortURL, error) {
+	var updatedURL entity.ShortURL
+
+	err := r.db.QueryRow(
+		ctx,
+		r.updateQuery,
+		shortURL.OriginalURL,
+		shortURL.ShortCode,
+		shortURL.ID,
+	).Scan(
+		&updatedURL.ID,
+		&updatedURL.OriginalURL,
+		&updatedURL.ShortCode,
+		&updatedURL.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("short URL with id '%s' not found: %w", shortURL.ID, ErrNotFound)
+		}
+		return nil, fmt.Errorf("update short URL: %w", err)
+	}
+
+	return &updatedURL, nil
+}
+
 // Delete удаляет запись сокращенного URL по идентификатору.
 func (r *storageRepository) Delete(ctx context.Context, id string) (string, error) {
-	query := fmt.Sprintf(
-		`DELETE FROM %s 
-         WHERE id = $1 
-         RETURNING id`,
-		r.table,
-	)
-
 	var deletedID string
-	err := r.db.QueryRow(ctx, query, id).Scan(&deletedID)
+	err := r.db.QueryRow(ctx, r.deleteQuery, id).Scan(&deletedID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", fmt.Errorf("short URL with id '%s' not found: %w", id, ErrNotFound)

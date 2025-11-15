@@ -4,10 +4,12 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/internal/usecase"
 	"github.com/skiphead/practicum/pkg/utils"
@@ -20,7 +22,10 @@ import (
 	"time"
 )
 
-//const schema = `http`
+// Ошибки базы данных
+var (
+	ErrDuplicateKey = errors.New("запись уже существует")
+)
 
 type URLHandler struct {
 	storage    usecase.URLUseCase
@@ -29,7 +34,6 @@ type URLHandler struct {
 }
 
 func NewURLHandler(storage usecase.URLUseCase, serverAddr, baseURL string) *URLHandler {
-
 	return &URLHandler{
 		storage:    storage,
 		serverAddr: serverAddr,
@@ -38,7 +42,6 @@ func NewURLHandler(storage usecase.URLUseCase, serverAddr, baseURL string) *URLH
 }
 
 func (h *URLHandler) ChiMux() *chi.Mux {
-
 	r := chi.NewRouter()
 	r.Use(CompressionMiddleware)
 	r.Use(LoggingMiddleware)
@@ -97,6 +100,7 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 
 	shortURL, err := h.processAndSaveURL(original.URL, w)
 	if err != nil {
+		render.JSON(w, r, map[string]string{"result": shortURL})
 		return
 	}
 
@@ -124,16 +128,23 @@ func (h *URLHandler) createBatchShortAPIURL(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "URL is required", http.StatusBadRequest)
 		return
 	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), time.Second*5)
 	defer cancel()
 
-	shortURL, err := h.storage.BatchSave(ctx, original)
+	shortURLs, err := h.storage.BatchSave(ctx, original)
 	if err != nil {
+		if h.isDuplicateError(err) {
+			http.Error(w, ErrDuplicateKey.Error(), http.StatusConflict)
+			return
+		}
+		zap.L().Error("batch save error", zap.Error(err))
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
-	render.JSON(w, r, shortURL)
+	render.JSON(w, r, shortURLs)
 }
 
 func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
@@ -147,6 +158,7 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	shortURL, err := h.processAndSaveURL(originalURL, w)
 	if err != nil {
 		zap.L().Error("process error", zap.Error(err))
+		_, err = w.Write([]byte(shortURL))
 		return
 	}
 
@@ -173,17 +185,34 @@ func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter
 	if err := h.validateURL(originalURL, w); err != nil {
 		return "", err
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	//key := h.generateRandomKey()
 
 	resp, err := h.storage.Save(ctx, originalURL)
 	if err != nil {
+		if h.isDuplicateError(err) {
+			http.Error(w, ErrDuplicateKey.Error(), http.StatusConflict)
+
+			shortURL, errGet := h.storage.GetByOriginalURL(ctx, originalURL)
+			if errGet != nil {
+				return "", errGet
+			}
+
+			return h.buildShortURL(shortURL.ShortCode), err
+		}
+		zap.L().Error("save error", zap.Error(err))
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return "", err
 	}
 
-	//h.storage.Save(key, originalURL)
 	return h.buildShortURL(resp.ShortCode), nil
+}
+
+// isDuplicateError унифицированная проверка на ошибку дублирования
+func (h *URLHandler) isDuplicateError(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 // validateURL унифицированная валидация URL
@@ -209,7 +238,6 @@ func (h *URLHandler) validateURL(originalURL string, w http.ResponseWriter) erro
 
 // buildShortURL создает короткий URL на основе ключа
 func (h *URLHandler) buildShortURL(key string) string {
-
 	return fmt.Sprintf("%s/%s", h.baseURL, key)
 }
 
