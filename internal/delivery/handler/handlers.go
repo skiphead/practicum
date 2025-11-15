@@ -123,12 +123,8 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if h.isDuplicateError(err) {
 			http.Error(w, shortURL, http.StatusConflict)
-			if err != nil {
-				zap.L().Error("write error", zap.Error(err))
-				return
-			}
-
 		}
+
 		zap.L().Error("process error", zap.Error(err))
 		return
 	}
