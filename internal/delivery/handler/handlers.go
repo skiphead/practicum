@@ -45,7 +45,7 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(CompressionMiddleware)
 	r.Use(LoggingMiddleware)
-	r.Use(render.SetContentType(render.ContentTypeJSON))
+	// Убрали глобальный middleware для установки Content-Type JSON
 	r.Get("/{key}", h.redirectURL)
 	r.Post("/", h.createShortURL)
 	r.Post("/api/shorten", h.createShortAPIURL)
@@ -112,6 +112,9 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
+	// Устанавливаем Content-Type для текстового ответа
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+
 	body, err := h.readRequestBody(r)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -119,11 +122,17 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	originalURL := string(body)
+
 	shortURL, err := h.processAndSaveURL(originalURL, w)
 	if err != nil {
 		if h.isDuplicateError(err) {
-			render.Status(r, http.StatusConflict)
-			render.JSON(w, r, shortURL)
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusConflict)
+			_, err = w.Write([]byte(shortURL))
+			if err != nil {
+				zap.L().Error("write error", zap.Error(err))
+			}
+			return
 		}
 
 		zap.L().Error("process error", zap.Error(err))
@@ -343,7 +352,10 @@ func logResponse(ww middleware.WrapResponseWriter) {
 func shouldCompressResponse(r *http.Request) bool {
 	supportsGzip := strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")
 	contentType := r.Header.Get("Content-Type")
-	supportedContentType := contentType == "text/plain" || contentType == "application/json"
+	// Добавляем text/plain с charset
+	supportedContentType := strings.HasPrefix(contentType, "text/plain") ||
+		contentType == "application/json" ||
+		strings.HasPrefix(contentType, "text/plain;")
 
 	return supportsGzip && supportedContentType
 }
@@ -381,9 +393,8 @@ func (c *compressWriter) Write(p []byte) (int, error) {
 }
 
 func (c *compressWriter) WriteHeader(statusCode int) {
-	if statusCode < 300 {
-		c.w.Header().Set("Content-Encoding", "gzip")
-	}
+	// Убираем проверку статуса - устанавливаем заголовок для всех статусов
+	c.w.Header().Set("Content-Encoding", "gzip")
 	c.w.WriteHeader(statusCode)
 }
 
