@@ -2,14 +2,22 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/internal/domain/repository"
 	"github.com/skiphead/practicum/pkg/utils"
 )
 
+// Ошибки базы данных
+var (
+	ErrDuplicateKey = errors.New("запись уже существует")
+)
+
 type URLUseCase interface {
 	Ping(ctx context.Context) error
+	IsDuplicateError(err error) error
 	Get(ctx context.Context, shortCode string) (*entity.ShortURL, error)
 	GetByOriginalURL(ctx context.Context, originalURL string) (*entity.ShortURL, error)
 	Save(ctx context.Context, originalURL string) (*entity.ShortURL, error)
@@ -45,6 +53,17 @@ func (s *urlUseCase) isDatabaseAvailable(ctx context.Context) bool {
 // buildShortURL создает полный короткий URL
 func (s *urlUseCase) buildShortURL(shortCode string) string {
 	return fmt.Sprintf("%s/%s", s.baseURL, shortCode)
+}
+
+// IsDuplicateError унифицированная проверка на ошибку дублирования
+func (s *urlUseCase) IsDuplicateError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+
+		return ErrDuplicateKey
+	}
+
+	return nil
 }
 
 // Save сохраняет оригинальный URL и возвращает сокращенную версию

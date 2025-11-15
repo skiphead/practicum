@@ -4,12 +4,10 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/internal/usecase"
 	"github.com/skiphead/practicum/pkg/utils"
@@ -20,11 +18,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-)
-
-// Ошибки базы данных
-var (
-	ErrDuplicateKey = errors.New("запись уже существует")
 )
 
 type URLHandler struct {
@@ -43,9 +36,8 @@ func NewURLHandler(storage usecase.URLUseCase, serverAddr, baseURL string) *URLH
 
 func (h *URLHandler) ChiMux() *chi.Mux {
 	r := chi.NewRouter()
-	r.Use(CompressionMiddleware)
-	r.Use(LoggingMiddleware)
-	// Убрали глобальный middleware для установки Content-Type JSON
+	r.Use(compressionMiddleware)
+	r.Use(loggingMiddleware)
 	r.Get("/{key}", h.redirectURL)
 	r.Post("/", h.createShortURL)
 	r.Post("/api/shorten", h.createShortAPIURL)
@@ -98,12 +90,14 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortURL, err := h.processAndSaveURL(original.URL, w)
+	shortURL, isConflict, err := h.processAndSaveURL(original.URL, w)
 	if err != nil {
-		if h.isDuplicateError(err) {
-			render.Status(r, http.StatusConflict)
-			render.JSON(w, r, map[string]string{"result": shortURL})
-		}
+		return
+	}
+
+	if isConflict {
+		render.Status(r, http.StatusConflict)
+		render.JSON(w, r, map[string]string{"result": shortURL})
 		return
 	}
 
@@ -112,7 +106,6 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
-	// Устанавливаем Content-Type для текстового ответа
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 
 	body, err := h.readRequestBody(r)
@@ -123,19 +116,18 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 
 	originalURL := string(body)
 
-	shortURL, err := h.processAndSaveURL(originalURL, w)
+	shortURL, isConflict, err := h.processAndSaveURL(originalURL, w)
 	if err != nil {
-		if h.isDuplicateError(err) {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			w.WriteHeader(http.StatusConflict)
-			_, err = w.Write([]byte(shortURL))
-			if err != nil {
-				zap.L().Error("write error", zap.Error(err))
-			}
-			return
-		}
+		return
+	}
 
-		zap.L().Error("process error", zap.Error(err))
+	if isConflict {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusConflict)
+		_, err = w.Write([]byte(shortURL))
+		if err != nil {
+			zap.L().Error("write error", zap.Error(err))
+		}
 		return
 	}
 
@@ -173,17 +165,21 @@ func (h *URLHandler) createBatchShortAPIURL(w http.ResponseWriter, r *http.Reque
 
 	shortURLs, err := h.storage.BatchSave(ctx, original)
 	if err != nil {
-		if h.isDuplicateError(err) {
-			http.Error(w, ErrDuplicateKey.Error(), http.StatusConflict)
-			return
-		}
-		zap.L().Error("batch save error", zap.Error(err))
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		h.handleConflictError(w, err)
 		return
 	}
 
 	w.WriteHeader(http.StatusCreated)
 	render.JSON(w, r, shortURLs)
+}
+
+// handleConflictError обрабатывает ошибки конфликтов для всех методов
+func (h *URLHandler) handleConflictError(w http.ResponseWriter, err error) bool {
+	if h.storage.IsDuplicateError(err) != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return true
+	}
+	return false
 }
 
 // readRequestBody унифицированное чтение тела запроса
@@ -197,9 +193,9 @@ func (h *URLHandler) readRequestBody(r *http.Request) ([]byte, error) {
 }
 
 // processAndSaveURL общая логика обработки и сохранения URL
-func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter) (string, error) {
+func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter) (string, bool, error) {
 	if err := h.validateURL(originalURL, w); err != nil {
-		return "", err
+		return "", false, err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -207,27 +203,19 @@ func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter
 
 	resp, err := h.storage.Save(ctx, originalURL)
 	if err != nil {
-		if h.isDuplicateError(err) {
-
+		if h.storage.IsDuplicateError(err) != nil {
 			shortURL, errGet := h.storage.GetByOriginalURL(ctx, originalURL)
 			if errGet != nil {
-				return "", errGet
+				return "", false, errGet
 			}
-
-			return h.buildShortURL(shortURL.ShortCode), err
+			return h.buildShortURL(shortURL.ShortCode), true, nil
 		}
 		zap.L().Error("save error", zap.Error(err))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return "", err
+		return "", false, err
 	}
 
-	return h.buildShortURL(resp.ShortCode), nil
-}
-
-// isDuplicateError унифицированная проверка на ошибку дублирования
-func (h *URLHandler) isDuplicateError(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+	return h.buildShortURL(resp.ShortCode), false, nil
 }
 
 // validateURL унифицированная валидация URL
@@ -282,7 +270,7 @@ func (h *URLHandler) closeBody(body io.ReadCloser) {
 	}
 }
 
-func CompressionMiddleware(next http.Handler) http.Handler {
+func compressionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ow := w
 
@@ -318,7 +306,7 @@ func CompressionMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func LoggingMiddleware(next http.Handler) http.Handler {
+func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
@@ -350,14 +338,16 @@ func logResponse(ww middleware.WrapResponseWriter) {
 
 // shouldCompressResponse проверяет, нужно ли сжимать ответ
 func shouldCompressResponse(r *http.Request) bool {
-	supportsGzip := strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")
-	contentType := r.Header.Get("Content-Type")
-	// Добавляем text/plain с charset
-	supportedContentType := strings.HasPrefix(contentType, "text/plain") ||
-		contentType == "application/json" ||
-		strings.HasPrefix(contentType, "text/plain;")
+	// Быстрая проверка выхода - если клиент не поддерживает gzip
+	if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		return false
+	}
 
-	return supportsGzip && supportedContentType
+	contentType := r.Header.Get("Content-Type")
+
+	// Проверяем, является ли тип контента одним из поддерживаемых
+	return strings.HasPrefix(contentType, "text/plain") ||
+		contentType == "application/json"
 }
 
 // shouldDecompressRequest проверяет, нужно ли распаковывать запрос
