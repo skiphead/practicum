@@ -48,22 +48,11 @@ func main() {
 
 	// Инициализация хранилищ
 	store := initFileStorage(cfg)
-
-	pool, connErr := pgxpool.New(context.Background(), cfg.DatabaseDSN)
-	if connErr != nil {
-		zap.L().Error("pgxpool initialization failed", zap.Error(connErr))
-	}
-	if pool.Ping(context.Background()) == nil {
-		db := stdlib.OpenDBFromPool(pool)
-		if err = postgresql.Migrations(db, "migrations"); err != nil {
-			zap.L().Error("postgresql migration failed", zap.Error(err))
-		}
-	}
-	storageRepo := repository.NewStorageRepository(pool)
+	storageRepo := initDatabase(cfg)
 
 	// Создание обработчика URL
 	handler := handlers.NewURLHandler(
-		usecase.NewStorageUseCase(cfg.BaseURL, *store, storageRepo),
+		usecase.NewStorageUseCase(cfg.BaseURL, *store, *storageRepo),
 		cfg.ServerAddr,
 		cfg.BaseURL)
 
@@ -117,6 +106,35 @@ func initFileStorage(cfg *config.Config) *repository.FileStorage {
 		zap.L().Fatal("File storage initialization failed", zap.Error(err))
 	}
 	return &store
+}
+
+// initDatabase инициализирует подключение к PostgreSQL и применяет миграции.
+// Параметры:
+//   - cfg: конфигурация приложения с DSN строкой подключения
+//
+// Возвращает:
+//   - указатель на репозиторий URL или nil при ошибке
+//
+// Действия:
+//  1. Устанавливает соединение с пулом подключений БД
+//  2. Проверяет подключение через ping
+//  3. Применяет миграции через стандартную библиотеку database/sql
+//  4. Создает репозиторий для работы с URL
+func initDatabase(cfg *config.Config) *repository.URLRepository {
+	pool, connErr := pgxpool.New(context.Background(), cfg.DatabaseDSN)
+	if connErr != nil {
+		zap.L().Error("pgxpool initialization failed", zap.Error(connErr))
+	}
+	if pool.Ping(context.Background()) == nil {
+		db := stdlib.OpenDBFromPool(pool)
+		if err := postgresql.Migrations(db, "migrations"); err != nil {
+			zap.L().Error("postgresql migration failed", zap.Error(err))
+		}
+	}
+
+	repo := repository.NewStorageRepository(pool)
+
+	return &repo
 }
 
 // initServer создает экземпляр HTTP-сервера с использованием фреймворка Chi.
