@@ -13,7 +13,6 @@ import (
 	"github.com/skiphead/practicum/pkg/utils"
 	"go.uber.org/zap"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -266,7 +265,7 @@ func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
 // closeBody унифицированное закрытие тела запроса
 func (h *URLHandler) closeBody(body io.ReadCloser) {
 	if err := body.Close(); err != nil {
-		log.Printf("error close Body: %v", err)
+		zap.L().Error("error close Body", zap.Error(err))
 	}
 }
 
