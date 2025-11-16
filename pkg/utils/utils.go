@@ -1,7 +1,8 @@
 package utils
 
 import (
-	"math/rand"
+	"crypto/rand"
+	"math/big"
 	"net/url"
 	"strings"
 )
@@ -32,8 +33,15 @@ const (
 
 func GenerateRandomKey() string {
 	buf := make([]byte, keyLength)
+	charsetLength := big.NewInt(int64(len(randomCharset)))
+
 	for i := range buf {
-		buf[i] = randomCharset[rand.Intn(len(randomCharset))]
+		// Генерируем криптографически безопасное случайное число в диапазоне [0, len(charset))
+		randIndex, err := rand.Int(rand.Reader, charsetLength)
+		if err != nil {
+			panic(err) // Обработка ошибки генерации
+		}
+		buf[i] = randomCharset[randIndex.Int64()]
 	}
 	return string(buf)
 }
