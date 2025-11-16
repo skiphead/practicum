@@ -174,7 +174,7 @@ func (h *URLHandler) createBatchShortAPIURL(w http.ResponseWriter, r *http.Reque
 
 // handleConflictError обрабатывает ошибки конфликтов для всех методов
 func (h *URLHandler) handleConflictError(w http.ResponseWriter, err error) bool {
-	if h.storage.IsDuplicateError(err) != nil {
+	if h.storage.IsDuplicateError(err) {
 		http.Error(w, err.Error(), http.StatusConflict)
 		return true
 	}
@@ -202,7 +202,7 @@ func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter
 
 	resp, err := h.storage.Save(ctx, originalURL)
 	if err != nil {
-		if h.storage.IsDuplicateError(err) != nil {
+		if h.storage.IsDuplicateError(err) {
 			shortURL, errGet := h.storage.GetByOriginalURL(ctx, originalURL)
 			if errGet != nil {
 				return "", false, errGet

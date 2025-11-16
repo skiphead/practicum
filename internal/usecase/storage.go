@@ -17,7 +17,7 @@ var (
 
 type URLUseCase interface {
 	Ping(ctx context.Context) error
-	IsDuplicateError(err error) error
+	IsDuplicateError(err error) bool
 	Get(ctx context.Context, shortCode string) (*entity.ShortURL, error)
 	GetByOriginalURL(ctx context.Context, originalURL string) (*entity.ShortURL, error)
 	Save(ctx context.Context, originalURL string) (*entity.ShortURL, error)
@@ -56,14 +56,14 @@ func (s *urlUseCase) buildShortURL(shortCode string) string {
 }
 
 // IsDuplicateError унифицированная проверка на ошибку дублирования
-func (s *urlUseCase) IsDuplicateError(err error) error {
+func (s *urlUseCase) IsDuplicateError(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 
-		return ErrDuplicateKey
+		return true
 	}
 
-	return nil
+	return false
 }
 
 // Save сохраняет оригинальный URL и возвращает сокращенную версию
