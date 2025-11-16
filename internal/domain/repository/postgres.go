@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgconn"
 	"strings"
 	"time"
 
@@ -26,6 +27,7 @@ var (
 
 type URLRepository interface {
 	Ping(ctx context.Context) error
+	IsDuplicateError(err error) bool
 	Create(ctx context.Context, shortCode, originalURL string) (*entity.ShortURL, error)
 	CreateBatch(ctx context.Context, in []entity.BatchShortenRequest, batchSize int) ([]entity.ShortURL, error)
 	Get(ctx context.Context, shortCode string) (*entity.ShortURL, error)
@@ -140,6 +142,17 @@ func (r *storageRepository) Ping(ctx context.Context) error {
 		return fmt.Errorf("database ping failed: %w", err)
 	}
 	return nil
+}
+
+func (r *storageRepository) IsDuplicateError(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		zap.L().Debug("Duplicate key violation detected",
+			zap.String("constraint", pgErr.ConstraintName),
+			zap.String("detail", pgErr.Detail))
+		return true
+	}
+	return false
 }
 
 // Create создает новую запись сокращенного URL в базе данных.

@@ -164,7 +164,10 @@ func (h *URLHandler) createBatchShortAPIURL(w http.ResponseWriter, r *http.Reque
 
 	shortURLs, err := h.storage.BatchSave(ctx, original)
 	if err != nil {
-		h.handleConflictError(w, err)
+		if h.storage.IsDuplicateError(err) {
+			w.WriteHeader(http.StatusConflict)
+			render.JSON(w, r, entity.BatchShortenResponse{})
+		}
 		return
 	}
 
@@ -203,11 +206,7 @@ func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter
 	resp, err := h.storage.Save(ctx, originalURL)
 	if err != nil {
 		if h.storage.IsDuplicateError(err) {
-			shortURL, errGet := h.storage.GetByOriginalURL(ctx, originalURL)
-			if errGet != nil {
-				return "", false, errGet
-			}
-			return h.buildShortURL(shortURL.ShortCode), true, nil
+			return h.buildShortURL(resp.ShortCode), true, nil
 		}
 		zap.L().Error("save error", zap.Error(err))
 		http.Error(w, "Internal server error", http.StatusInternalServerError)

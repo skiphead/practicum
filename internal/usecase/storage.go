@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/internal/domain/repository"
 	"github.com/skiphead/practicum/pkg/utils"
@@ -19,7 +18,6 @@ type URLUseCase interface {
 	Ping(ctx context.Context) error
 	IsDuplicateError(err error) bool
 	Get(ctx context.Context, shortCode string) (*entity.ShortURL, error)
-	GetByOriginalURL(ctx context.Context, originalURL string) (*entity.ShortURL, error)
 	Save(ctx context.Context, originalURL string) (*entity.ShortURL, error)
 	BatchSave(ctx context.Context, in []entity.BatchShortenRequest) ([]entity.BatchShortenResponse, error)
 }
@@ -57,13 +55,8 @@ func (s *urlUseCase) buildShortURL(shortCode string) string {
 
 // IsDuplicateError унифицированная проверка на ошибку дублирования
 func (s *urlUseCase) IsDuplicateError(err error) bool {
-	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 
-		return true
-	}
-
-	return false
+	return s.storageRepo.IsDuplicateError(err)
 }
 
 // Save сохраняет оригинальный URL и возвращает сокращенную версию
@@ -84,6 +77,15 @@ func (s *urlUseCase) Save(ctx context.Context, originalURL string) (*entity.Shor
 
 	// Используем основное хранилище (базу данных)
 	shortURL, err := s.storageRepo.Create(ctx, shortCode, originalURL)
+	if s.storageRepo.IsDuplicateError(err) {
+		duplicate, errGet := s.storageRepo.GetByOriginalURL(ctx, originalURL)
+		if errGet != nil {
+			return nil, errGet
+		}
+
+		return duplicate, err
+	}
+
 	if err != nil {
 		return nil, fmt.Errorf("create in database: %w", err)
 	}
@@ -119,31 +121,6 @@ func (s *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortUR
 	return shortURL, nil
 }
 
-// GetByOriginalURL возвращает оригинальный URL по короткому коду
-func (s *urlUseCase) GetByOriginalURL(ctx context.Context, originalURL string) (*entity.ShortURL, error) {
-	if !s.isDatabaseAvailable(ctx) {
-		// Используем файловое хранилище как fallback
-		resp, err := s.fileStorage.FindByOriginalURL(originalURL)
-		if err != nil {
-			return nil, fmt.Errorf("get from file storage: %w", err)
-		}
-
-		return &entity.ShortURL{
-			ID:          resp.UUID,
-			OriginalURL: resp.OriginalURL,
-			ShortCode:   originalURL,
-		}, nil
-	}
-
-	// Используем основное хранилище (базу данных)
-	shortURL, err := s.storageRepo.GetByOriginalURL(ctx, originalURL)
-	if err != nil {
-		return nil, fmt.Errorf("get from database: %w", err)
-	}
-
-	return shortURL, nil
-}
-
 // BatchSave сохраняет пакет URL и возвращает сокращенные версии
 func (s *urlUseCase) BatchSave(ctx context.Context, in []entity.BatchShortenRequest) ([]entity.BatchShortenResponse, error) {
 	if len(in) == 0 {
@@ -172,6 +149,7 @@ func (s *urlUseCase) BatchSave(ctx context.Context, in []entity.BatchShortenRequ
 	const batchSize = 1000
 	createdURLs, err := s.storageRepo.CreateBatch(ctx, in, batchSize)
 	if err != nil {
+
 		return nil, fmt.Errorf("create batch in database: %w", err)
 	}
 
