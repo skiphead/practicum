@@ -34,6 +34,7 @@ type URLRepository interface {
 	GetByOriginalURL(ctx context.Context, originalURL string) (*entity.ShortURL, error)
 	Update(ctx context.Context, shortURL *entity.ShortURL) (*entity.ShortURL, error) // Исправлена сигнатура
 	Delete(ctx context.Context, id string) (string, error)
+	FindDuplicateURLs(ctx context.Context, urls []entity.BatchShortenRequest) ([]entity.ShortURL, error)
 }
 
 type storageRepository struct {
@@ -231,6 +232,84 @@ func (r *storageRepository) rollbackTxOnError(ctx context.Context, tx pgx.Tx, er
 			)
 		}
 	}
+}
+
+// FindDuplicateURLs ищет дубликаты URL в базе данных
+func (r *storageRepository) FindDuplicateURLs(ctx context.Context, urls []entity.BatchShortenRequest) ([]entity.ShortURL, error) {
+	if len(urls) == 0 {
+		return []entity.ShortURL{}, nil
+	}
+
+	// Собираем все OriginalURL для проверки
+	urlMap := make(map[string]bool)
+	var urlValues []string
+	var placeholders []string
+	var args []interface{}
+
+	for _, url := range urls {
+		// Используем map для уникальности URL
+		if !urlMap[url.OriginalURL] {
+			urlMap[url.OriginalURL] = true
+			placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)+1))
+			args = append(args, url.OriginalURL)
+			urlValues = append(urlValues, url.OriginalURL)
+		}
+	}
+
+	if len(args) == 0 {
+		return []entity.ShortURL{}, nil
+	}
+
+	// Формируем SQL запрос
+	query := fmt.Sprintf(`
+        SELECT 
+            id,
+            created_at,
+            expires_at,
+            correlation_id,
+            short_code,
+            original_url,
+            user_id,
+            is_active,
+            click_count
+        FROM shorts_url 
+        WHERE original_url IN (%s)
+        AND is_active = true
+    `, strings.Join(placeholders, ", "))
+
+	// Выполняем запрос
+	rows, err := r.db.Query(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("error querying database: %w", err)
+	}
+	defer rows.Close()
+
+	var duplicates []entity.ShortURL
+
+	for rows.Next() {
+		var url entity.ShortURL
+		err := rows.Scan(
+			&url.ID,
+			&url.CreatedAt,
+			&url.ExpiresAt,
+			&url.CorrelationID,
+			&url.ShortCode,
+			&url.OriginalURL,
+			&url.UserID,
+			&url.IsActive,
+			&url.ClickCount,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("error scanning row: %w", err)
+		}
+		duplicates = append(duplicates, url)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	return duplicates, nil
 }
 
 // insertBatch выполняет вставку одного пакета записей

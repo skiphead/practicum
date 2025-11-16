@@ -162,12 +162,20 @@ func (h *URLHandler) createBatchShortAPIURL(w http.ResponseWriter, r *http.Reque
 	ctx, cancel := context.WithTimeout(r.Context(), time.Second*5)
 	defer cancel()
 
+	duplicates, errDuplicates := h.storage.FindDuplicateURLs(ctx, original)
+	if errDuplicates != nil {
+		render.Status(r, http.StatusInternalServerError)
+	}
+
+	if len(duplicates) > 0 {
+		w.WriteHeader(http.StatusConflict)
+		render.JSON(w, r, duplicates)
+		return
+	}
+
 	shortURLs, err := h.storage.BatchSave(ctx, original)
 	if err != nil {
-		if h.storage.IsDuplicateError(err) {
-			w.WriteHeader(http.StatusConflict)
-			render.JSON(w, r, entity.BatchShortenResponse{})
-		}
+		render.Status(r, http.StatusInternalServerError)
 		return
 	}
 

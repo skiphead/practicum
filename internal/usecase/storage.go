@@ -20,6 +20,7 @@ type URLUseCase interface {
 	Get(ctx context.Context, shortCode string) (*entity.ShortURL, error)
 	Save(ctx context.Context, originalURL string) (*entity.ShortURL, error)
 	BatchSave(ctx context.Context, in []entity.BatchShortenRequest) ([]entity.BatchShortenResponse, error)
+	FindDuplicateURLs(ctx context.Context, urls []entity.BatchShortenRequest) ([]entity.BatchShortenResponse, error)
 }
 
 // urlUseCase реализует бизнес-логику работы с сокращенными URL
@@ -120,18 +121,36 @@ func (s *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortUR
 
 	return shortURL, nil
 }
+func (s *urlUseCase) FindDuplicateURLs(ctx context.Context, urls []entity.BatchShortenRequest) ([]entity.BatchShortenResponse, error) {
+
+	response := make([]entity.BatchShortenResponse, 0, len(urls))
+
+	createdURLs, err := s.storageRepo.FindDuplicateURLs(ctx, urls)
+	if err != nil {
+		return nil, fmt.Errorf("find duplicate URLs: %w", err)
+	}
+
+	for _, url := range createdURLs {
+		response = append(response, entity.BatchShortenResponse{
+			CorrelationID: url.CorrelationID,
+			ShortURL:      s.buildShortURL(url.ShortCode),
+		})
+	}
+
+	return response, nil
+}
 
 // BatchSave сохраняет пакет URL и возвращает сокращенные версии
-func (s *urlUseCase) BatchSave(ctx context.Context, in []entity.BatchShortenRequest) ([]entity.BatchShortenResponse, error) {
-	if len(in) == 0 {
+func (s *urlUseCase) BatchSave(ctx context.Context, urls []entity.BatchShortenRequest) ([]entity.BatchShortenResponse, error) {
+	if len(urls) == 0 {
 		return []entity.BatchShortenResponse{}, nil
 	}
 
-	response := make([]entity.BatchShortenResponse, 0, len(in))
+	response := make([]entity.BatchShortenResponse, 0, len(urls))
 
 	if !s.isDatabaseAvailable(ctx) {
 		// Используем файловое хранилище как fallback
-		for _, item := range in {
+		for _, item := range urls {
 			code := utils.GenerateRandomKey()
 			if err := s.fileStorage.Save(item.CorrelationID, code, item.OriginalURL); err != nil {
 				return nil, fmt.Errorf("save batch item to file storage: %w", err)
@@ -147,10 +166,10 @@ func (s *urlUseCase) BatchSave(ctx context.Context, in []entity.BatchShortenRequ
 
 	// Используем основное хранилище (базу данных)
 	const batchSize = 1000
-	createdURLs, err := s.storageRepo.CreateBatch(ctx, in, batchSize)
+	createdURLs, err := s.storageRepo.CreateBatch(ctx, urls, batchSize)
 	if err != nil {
 
-		return nil, fmt.Errorf("create batch in database: %w", err)
+		return nil, fmt.Errorf("create batch urls database: %w", err)
 	}
 
 	for _, url := range createdURLs {
