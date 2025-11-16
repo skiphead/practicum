@@ -46,6 +46,7 @@ type storageRepository struct {
 	updateQuery      string
 	deleteQuery      string
 	findDuplicateURL string
+	baseSelect       string
 	db               *pgxpool.Pool
 }
 
@@ -79,6 +80,21 @@ func NewStorageRepository(db *pgxpool.Pool, opts ...RepositoryOption) URLReposit
 }
 
 func (r *storageRepository) initQueries() {
+	r.baseSelect = fmt.Sprintf(
+		`SELECT 
+			id,
+		    created_at,
+		    expires_at,
+		    correlation_id,
+		    short_code,
+		    original_url,
+		    user_id,
+		    is_active,
+		    click_count
+		FROM %s `,
+		r.table,
+	)
+
 	r.createQuery = fmt.Sprintf(
 		`INSERT INTO %s (
 			short_code, 
@@ -243,7 +259,6 @@ func (r *storageRepository) FindDuplicateURLs(ctx context.Context, urls []entity
 
 	// Собираем все OriginalURL для проверки
 	urlMap := make(map[string]bool)
-	var urlValues []string
 	var placeholders []string
 	var args []interface{}
 
@@ -253,7 +268,6 @@ func (r *storageRepository) FindDuplicateURLs(ctx context.Context, urls []entity
 			urlMap[url.OriginalURL] = true
 			placeholders = append(placeholders, fmt.Sprintf("$%d", len(args)+1))
 			args = append(args, url.OriginalURL)
-			urlValues = append(urlValues, url.OriginalURL)
 		}
 	}
 
@@ -262,21 +276,8 @@ func (r *storageRepository) FindDuplicateURLs(ctx context.Context, urls []entity
 	}
 
 	// Формируем SQL запрос
-	query := fmt.Sprintf(`
-        SELECT 
-            id,
-            created_at,
-            expires_at,
-            correlation_id,
-            short_code,
-            original_url,
-            user_id,
-            is_active,
-            click_count
-        FROM shorts_url 
-        WHERE original_url IN (%s)
-        AND is_active = true
-    `, strings.Join(placeholders, ", "))
+	query := fmt.Sprintf(r.baseSelect+` WHERE original_url IN (%s)
+        AND is_active = true`, strings.Join(placeholders, ", "))
 
 	// Выполняем запрос
 	rows, err := r.db.Query(ctx, query, args...)
