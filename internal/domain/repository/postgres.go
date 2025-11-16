@@ -38,16 +38,16 @@ type URLRepository interface {
 }
 
 type storageRepository struct {
-	table            string
-	createQuery      string
-	createBatchQuery string
-	getQuery         string
-	getByOriginalURL string
-	updateQuery      string
-	deleteQuery      string
-	findDuplicateURL string
-	baseSelect       string
-	db               *pgxpool.Pool
+	table               string
+	createQuery         string
+	createBatchQuery    string
+	getQuery            string
+	getByOriginalURL    string
+	updateQuery         string
+	deleteQuery         string
+	findDuplicateURL    string
+	findDuplicatesQuery string
+	db                  *pgxpool.Pool
 }
 
 type RepositoryConfig struct {
@@ -80,7 +80,7 @@ func NewStorageRepository(db *pgxpool.Pool, opts ...RepositoryOption) URLReposit
 }
 
 func (r *storageRepository) initQueries() {
-	r.baseSelect = fmt.Sprintf(
+	r.findDuplicatesQuery = fmt.Sprintf(
 		`SELECT 
 			id,
 		    created_at,
@@ -91,7 +91,7 @@ func (r *storageRepository) initQueries() {
 		    user_id,
 		    is_active,
 		    click_count
-		FROM %s `,
+		FROM %s WHERE original_url IN `,
 		r.table,
 	)
 
@@ -276,8 +276,7 @@ func (r *storageRepository) FindDuplicateURLs(ctx context.Context, urls []entity
 	}
 
 	// Формируем SQL запрос
-	query := fmt.Sprintf(r.baseSelect+` WHERE original_url IN (%s)
-        AND is_active = true`, strings.Join(placeholders, ", "))
+	query := fmt.Sprintf(r.findDuplicatesQuery+"(%s)", strings.Join(placeholders, ", "))
 
 	// Выполняем запрос
 	rows, err := r.db.Query(ctx, query, args...)
