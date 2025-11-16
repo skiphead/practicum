@@ -45,6 +45,7 @@ type storageRepository struct {
 	getByOriginalURL string
 	updateQuery      string
 	deleteQuery      string
+	findDuplicateURL string
 	db               *pgxpool.Pool
 }
 
