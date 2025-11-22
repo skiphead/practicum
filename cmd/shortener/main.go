@@ -31,6 +31,7 @@ import (
 // 4. Обработчики HTTP-запросов
 // 5. HTTP-сервер
 func main() {
+
 	// Инициализация логгера
 	logger, err := zap.NewProduction()
 	if err != nil {
@@ -45,6 +46,11 @@ func main() {
 
 	// Загрузка конфигурации
 	cfg := loadConfig()
+
+	err = os.Setenv("SESSION_KEY", cfg.SessionKey)
+	if err != nil {
+		zap.L().Error("Error setting SESSION_KEY", zap.Error(err))
+	}
 
 	// Инициализация хранилищ
 	store := initFileStorage(cfg)

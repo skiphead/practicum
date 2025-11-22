@@ -28,10 +28,11 @@ var (
 type URLRepository interface {
 	Ping(ctx context.Context) error
 	IsDuplicateError(err error) bool
-	Create(ctx context.Context, shortCode, originalURL string) (*entity.ShortURL, error)
-	CreateBatch(ctx context.Context, in []entity.BatchShortenRequest, batchSize int) ([]entity.ShortURL, error)
+	Create(ctx context.Context, userID, shortCode, originalURL string) (*entity.ShortURL, error)
+	CreateBatch(ctx context.Context, userID string, in []entity.BatchShortenRequest, batchSize int) ([]entity.ShortURL, error)
 	Get(ctx context.Context, shortCode string) (*entity.ShortURL, error)
 	GetByOriginalURL(ctx context.Context, originalURL string) (*entity.ShortURL, error)
+	GetByUserID(ctx context.Context, userID string) ([]entity.ShortURL, error)
 	Update(ctx context.Context, shortURL *entity.ShortURL) (*entity.ShortURL, error) // Исправлена сигнатура
 	Delete(ctx context.Context, id string) (string, error)
 	FindDuplicateURLs(ctx context.Context, urls []entity.BatchShortenRequest) ([]entity.ShortURL, error)
@@ -43,6 +44,7 @@ type storageRepository struct {
 	createBatchQuery    string
 	getQuery            string
 	getByOriginalURL    string
+	getByUserID         string
 	updateQuery         string
 	deleteQuery         string
 	findDuplicateURL    string
@@ -97,10 +99,11 @@ func (r *storageRepository) initQueries() {
 
 	r.createQuery = fmt.Sprintf(
 		`INSERT INTO %s (
+            user_id,    
 			short_code, 
 			original_url, 
 			expires_at
-		) VALUES ($1, $2, $3) 
+		) VALUES ($1, $2, $3, $4) 
 		RETURNING 
 			id, 
 			original_url, 
@@ -110,6 +113,7 @@ func (r *storageRepository) initQueries() {
 	)
 
 	r.createBatchQuery = `INSERT INTO %s (
+            user_id,    
 			correlation_id, 
 			short_code, 
 			original_url, 
@@ -137,6 +141,15 @@ func (r *storageRepository) initQueries() {
 			expires_at
 		FROM %s 
 		WHERE original_url = $1`,
+		r.table)
+	r.getByUserID = fmt.Sprintf(`SELECT 
+			id, 
+			original_url, 
+			short_code, 
+			created_at,
+			expires_at
+		FROM %s 
+		WHERE user_id = $1`,
 		r.table)
 
 	r.updateQuery = fmt.Sprintf(
@@ -174,7 +187,7 @@ func (r *storageRepository) IsDuplicateError(err error) bool {
 }
 
 // Create создает новую запись сокращенного URL в базе данных.
-func (r *storageRepository) Create(ctx context.Context, shortCode, originalURL string) (*entity.ShortURL, error) {
+func (r *storageRepository) Create(ctx context.Context, userID, shortCode, originalURL string) (*entity.ShortURL, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin transaction: %w", err)
@@ -184,7 +197,7 @@ func (r *storageRepository) Create(ctx context.Context, shortCode, originalURL s
 	var shortURL entity.ShortURL
 	expiresAt := time.Now().AddDate(1, 0, 0)
 
-	err = tx.QueryRow(ctx, r.createQuery, shortCode, originalURL, expiresAt).Scan(
+	err = tx.QueryRow(ctx, r.createQuery, userID, shortCode, originalURL, expiresAt).Scan(
 		&shortURL.ID,
 		&shortURL.OriginalURL,
 		&shortURL.ShortCode,
@@ -203,7 +216,7 @@ func (r *storageRepository) Create(ctx context.Context, shortCode, originalURL s
 
 // CreateBatch создает пакет коротких URL в транзакции с обработкой пакетами фиксированного размера.
 func (r *storageRepository) CreateBatch(
-	ctx context.Context,
+	ctx context.Context, userID string,
 	requests []entity.BatchShortenRequest,
 	batchSize int,
 ) ([]entity.ShortURL, error) {
@@ -225,7 +238,7 @@ func (r *storageRepository) CreateBatch(
 		end := min(start+effectiveBatchSize, len(requests))
 		batch := requests[start:end]
 
-		batchResults, err := r.insertBatch(ctx, tx, batch)
+		batchResults, err := r.insertBatch(ctx, tx, userID, batch)
 		if err != nil {
 			return nil, fmt.Errorf("insert batch [%d:%d]: %w", start, end, err)
 		}
@@ -316,7 +329,7 @@ func (r *storageRepository) FindDuplicateURLs(ctx context.Context, urls []entity
 // insertBatch выполняет вставку одного пакета записей
 func (r *storageRepository) insertBatch(
 	ctx context.Context,
-	tx pgx.Tx,
+	tx pgx.Tx, userID string,
 	batch []entity.BatchShortenRequest,
 ) ([]entity.ShortURL, error) {
 	if len(batch) == 0 {
@@ -330,10 +343,10 @@ func (r *storageRepository) insertBatch(
 
 	for i, item := range batch {
 		code := utils.GenerateRandomKey()
-		pos := i * 4
+		pos := i * 5
 		placeholders = append(placeholders,
-			fmt.Sprintf("($%d, $%d, $%d, $%d)", pos+1, pos+2, pos+3, pos+4))
-		args = append(args, item.CorrelationID, code, item.OriginalURL, expiresAt)
+			fmt.Sprintf("($%d, $%d, $%d, $%d, $%d)", pos+1, pos+2, pos+3, pos+4, pos+5))
+		args = append(args, userID, item.CorrelationID, code, item.OriginalURL, expiresAt)
 	}
 
 	query := fmt.Sprintf(r.createBatchQuery, r.table, strings.Join(placeholders, ", "))
@@ -416,6 +429,33 @@ func (r *storageRepository) GetByOriginalURL(ctx context.Context, originalURL st
 	}
 
 	return &shortURL, nil
+}
+
+// GetByUserID возвращает запись сокращенного URL по его оригинальной ссылке.
+func (r *storageRepository) GetByUserID(ctx context.Context, userID string) ([]entity.ShortURL, error) {
+	var shortURL entity.ShortURL
+	var expiresAt time.Time
+
+	rows, err := r.db.Query(ctx, r.getByUserID, userID)
+	if err != nil {
+		return nil, fmt.Errorf("error querying database: %w", err)
+	}
+	var list []entity.ShortURL
+	for rows.Next() {
+		errScan := rows.Scan(
+			&shortURL.ID,
+			&shortURL.OriginalURL,
+			&shortURL.ShortCode,
+			&shortURL.CreatedAt,
+			&expiresAt,
+		)
+		if errScan != nil {
+			return nil, fmt.Errorf("error scanning row: %w", errScan)
+		}
+		list = append(list, shortURL)
+	}
+
+	return list, nil
 }
 
 // Update обновляет существующую запись сокращенного URL в базе данных.

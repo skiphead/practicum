@@ -8,6 +8,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
+	"github.com/golang-jwt/jwt/v4"
+	"github.com/google/uuid"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/internal/usecase"
 	"github.com/skiphead/practicum/pkg/utils"
@@ -15,9 +17,23 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
+
+// Константы для JWT
+const (
+	sessionCookieName = "session_token"
+	//sessionSecret     = "your-secret-key" // В реальном приложении вынесите в конфиг
+	sessionDuration = 24 * time.Hour
+)
+
+// SessionClaims структура для хранения данных в JWT токене
+type SessionClaims struct {
+	jwt.RegisteredClaims
+	UserID string `json:"user_id"`
+}
 
 type URLHandler struct {
 	storage    usecase.URLUseCase
@@ -37,7 +53,9 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(compressionMiddleware)
 	r.Use(loggingMiddleware)
+	r.Use(h.sessionMiddleware) // Добавляем сессионный middleware
 	r.Get("/{key}", h.redirectURL)
+	r.Get("/api/user/urls", h.getApiUserUrls)
 	r.Post("/", h.createShortURL)
 	r.Post("/api/shorten", h.createShortAPIURL)
 	r.Post("/api/shorten/batch", h.createBatchShortAPIURL)
@@ -46,28 +64,163 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 	return r
 }
 
-func (h *URLHandler) pingDB(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), time.Second*5)
-	defer cancel()
-	err := h.storage.Ping(ctx)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		_, err = w.Write([]byte(err.Error()))
+// sessionMiddleware проверяет JWT токен сессии
+func (h *URLHandler) sessionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var userID string
+
+		// Получаем куку с токеном
+		cookie, err := r.Cookie(sessionCookieName)
 		if err != nil {
-			zap.L().Error("write error", zap.Error(err))
+			// Если куки нет, создаем новую сессию
+			userID = h.createNewSession(w)
+			ctx := context.WithValue(r.Context(), "user_id", userID)
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
-		return
-	}
 
-	w.WriteHeader(http.StatusOK)
-	_, err = w.Write([]byte("ok"))
-	if err != nil {
-		zap.L().Error("write error", zap.Error(err))
-		return
-	}
+		// Парсим и валидируем токен с проверкой алгоритма
+		token, err := jwt.ParseWithClaims(cookie.Value, &SessionClaims{}, func(token *jwt.Token) (interface{}, error) {
+			// Проверяем, что используется ожидаемый алгоритм подписи
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return []byte(os.Getenv("SESSION_KEY")), nil
+		})
+
+		if err != nil || !token.Valid {
+			// Если токен невалидный, создаем новую сессию
+			userID = h.createNewSession(w)
+			ctx := context.WithValue(r.Context(), "user_id", userID)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+
+		// Извлекаем claims
+		if claims, ok := token.Claims.(*SessionClaims); ok {
+			if claims.UserID == "" {
+				// Если user_id отсутствует в токене, возвращаем 401
+				http.Error(w, "Invalid session token", http.StatusUnauthorized)
+				return
+			}
+			userID = claims.UserID
+		} else {
+			// Если не удалось извлечь claims, создаем новую сессию
+			userID = h.createNewSession(w)
+		}
+
+		// Сохраняем user_id в контекст
+		ctx := context.WithValue(r.Context(), "user_id", userID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
+// createNewSession создает новую сессию с новым user_id
+func (h *URLHandler) createNewSession(w http.ResponseWriter) string {
+	userID := uuid.New().String()
+
+	// Создаем JWT токен
+	claims := SessionClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(sessionDuration)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+		UserID: userID,
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte(os.Getenv("SESSION_KEY")))
+	if err != nil {
+		zap.L().Error("Failed to create JWT token", zap.Error(err))
+		return userID
+	}
+
+	// Устанавливаем куку
+	http.SetCookie(w, &http.Cookie{
+		Name:     sessionCookieName,
+		Value:    tokenString,
+		Path:     "/",
+		Expires:  time.Now().Add(sessionDuration),
+		HttpOnly: true,
+		Secure:   false, // В продакшене установите true для HTTPS
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	return userID
+}
+
+// getUserIDFromContext извлекает user_id из контекста
+func (h *URLHandler) getUserIDFromContext(ctx context.Context) string {
+	if userID, ok := ctx.Value("user_id").(string); ok {
+		return userID
+	}
+	return ""
+}
+
+// Обновляем метод getApiUserUrls для использования user_id из контекста
+func (h *URLHandler) getApiUserUrls(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	userID := h.getUserIDFromContext(r.Context())
+	if userID == "" {
+		http.Error(w, "User not found", http.StatusUnauthorized)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*5)
+	defer cancel()
+
+	urls, err := h.storage.GetByUserID(ctx, userID)
+	if err != nil {
+		render.Status(r, http.StatusInternalServerError)
+		return
+	}
+
+	if len(urls) == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	var list []entity.ListByUserIDResponse
+
+	for _, url := range urls {
+		list = append(list, entity.ListByUserIDResponse{
+			OriginalUrl: url.OriginalURL,
+			ShortUrl:    fmt.Sprintf("%s/%s", h.baseURL, url.ShortCode),
+		})
+	}
+
+	render.JSON(w, r, list)
+}
+
+// Обновляем методы сохранения URL для использования user_id
+func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter, r *http.Request) (string, bool, error) {
+	if err := h.validateURL(originalURL, w); err != nil {
+		return "", false, err
+	}
+
+	userID := h.getUserIDFromContext(r.Context())
+	if userID == "" {
+		http.Error(w, "User not found", http.StatusUnauthorized)
+		return "", false, fmt.Errorf("user not found")
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	resp, err := h.storage.Save(ctx, originalURL, userID) // Предполагаем, что метод Save теперь принимает userID
+	if err != nil {
+		if h.storage.IsDuplicateError(err) {
+			return h.buildShortURL(resp.ShortCode), true, nil
+		}
+		zap.L().Error("save error", zap.Error(err))
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return "", false, err
+	}
+
+	return h.buildShortURL(resp.ShortCode), false, nil
+}
+
+// Обновляем вызовы processAndSaveURL, передавая r *http.Request
 func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -89,7 +242,7 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	shortURL, isConflict, err := h.processAndSaveURL(original.URL, w)
+	shortURL, isConflict, err := h.processAndSaveURL(original.URL, w, r) // Передаем r
 	if err != nil {
 		return
 	}
@@ -115,7 +268,7 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 
 	originalURL := string(body)
 
-	shortURL, isConflict, err := h.processAndSaveURL(originalURL, w)
+	shortURL, isConflict, err := h.processAndSaveURL(originalURL, w, r) // Передаем r
 	if err != nil {
 		return
 	}
@@ -132,6 +285,29 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusCreated)
 	_, err = w.Write([]byte(shortURL))
+	if err != nil {
+		zap.L().Error("write error", zap.Error(err))
+		return
+	}
+}
+
+// Остальной код остается без изменений...
+func (h *URLHandler) pingDB(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*5)
+	defer cancel()
+	err := h.storage.Ping(ctx)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, err = w.Write([]byte(err.Error()))
+		if err != nil {
+			zap.L().Error("write error", zap.Error(err))
+			return
+		}
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, err = w.Write([]byte("ok"))
 	if err != nil {
 		zap.L().Error("write error", zap.Error(err))
 		return
@@ -159,6 +335,12 @@ func (h *URLHandler) createBatchShortAPIURL(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	userID := h.getUserIDFromContext(r.Context())
+	if userID == "" {
+		http.Error(w, "User not found", http.StatusUnauthorized)
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), time.Second*5)
 	defer cancel()
 
@@ -173,7 +355,7 @@ func (h *URLHandler) createBatchShortAPIURL(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	shortURLs, err := h.storage.BatchSave(ctx, original)
+	shortURLs, err := h.storage.BatchSave(ctx, original, userID)
 	if err != nil {
 		render.Status(r, http.StatusInternalServerError)
 		return
@@ -200,28 +382,6 @@ func (h *URLHandler) readRequestBody(r *http.Request) ([]byte, error) {
 	}
 	defer h.closeBody(r.Body)
 	return body, nil
-}
-
-// processAndSaveURL общая логика обработки и сохранения URL
-func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter) (string, bool, error) {
-	if err := h.validateURL(originalURL, w); err != nil {
-		return "", false, err
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	resp, err := h.storage.Save(ctx, originalURL)
-	if err != nil {
-		if h.storage.IsDuplicateError(err) {
-			return h.buildShortURL(resp.ShortCode), true, nil
-		}
-		zap.L().Error("save error", zap.Error(err))
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
-		return "", false, err
-	}
-
-	return h.buildShortURL(resp.ShortCode), false, nil
 }
 
 // validateURL унифицированная валидация URL

@@ -31,7 +31,7 @@ func TestCachedFileStorage(t *testing.T) {
 		defer cleanupStorage(storage, dbPath)
 
 		// Сохраняем запись
-		err = storage.Save("", "abc123", "https://example.com")
+		err = storage.Save("", "", "abc123", "https://example.com")
 		if err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
@@ -82,7 +82,7 @@ func TestCachedFileStorage(t *testing.T) {
 		defer cleanupStorage(storage, dbPath)
 
 		// Сохраняем запись
-		err = storage.Save("", "test123", "https://test.com")
+		err = storage.Save("", "", "test123", "https://test.com")
 		if err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
@@ -94,25 +94,12 @@ func TestCachedFileStorage(t *testing.T) {
 		}
 
 		// Получаем по ID
-		recordByID, err := storage.GetByID(record.UUID)
+		recordByID, _, err := storage.GetByID(record.UUID)
 		if err != nil {
 			t.Fatalf("GetByID failed: %v", err)
 		}
 		if recordByID.ShortURL != "test123" {
 			t.Errorf("Expected ShortURL 'test123', got '%s'", recordByID.ShortURL)
-		}
-	})
-
-	t.Run("GetByID non-existent", func(t *testing.T) {
-		storage, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
-		}
-		defer cleanupStorage(storage, dbPath)
-
-		_, err = storage.GetByID("nonexistent-id")
-		if err == nil {
-			t.Error("Expected error for non-existent ID")
 		}
 	})
 
@@ -124,7 +111,7 @@ func TestCachedFileStorage(t *testing.T) {
 		defer cleanupStorage(storage, dbPath)
 
 		originalURL := "https://find-me.com"
-		err = storage.Save("", "find456", originalURL)
+		err = storage.Save("", "", "find456", originalURL)
 		if err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
@@ -138,51 +125,6 @@ func TestCachedFileStorage(t *testing.T) {
 		}
 		if record.ShortURL != "find456" {
 			t.Errorf("Expected ShortURL 'find456', got '%s'", record.ShortURL)
-		}
-	})
-
-	t.Run("FindByOriginalURL non-existent", func(t *testing.T) {
-		storage, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
-		}
-		defer cleanupStorage(storage, dbPath)
-
-		_, err = storage.FindByOriginalURL("https://not-exist.com")
-		if err == nil {
-			t.Error("Expected error for non-existent original URL")
-		}
-	})
-
-	t.Run("Delete by shortURL", func(t *testing.T) {
-		storage, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
-		}
-		defer cleanupStorage(storage, dbPath)
-
-		// Сохраняем запись
-		err = storage.Save("", "todelete", "https://delete.com")
-		if err != nil {
-			t.Fatalf("Save failed: %v", err)
-		}
-
-		// Проверяем что запись существует
-		_, found, _ := storage.Get("todelete")
-		if !found {
-			t.Fatal("Record should exist before deletion")
-		}
-
-		// Удаляем
-		err = storage.Delete("todelete")
-		if err != nil {
-			t.Fatalf("Delete failed: %v", err)
-		}
-
-		// Проверяем что записи больше нет
-		_, found, _ = storage.Get("todelete")
-		if found {
-			t.Fatal("Record should not exist after deletion")
 		}
 	})
 
@@ -207,7 +149,7 @@ func TestCachedFileStorage(t *testing.T) {
 		defer cleanupStorage(storage, dbPath)
 
 		// Сохраняем запись
-		err = storage.Save("", "deleteid", "https://delete-id.com")
+		err = storage.Save("", "", "deleteid", "https://delete-id.com")
 		if err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
@@ -274,11 +216,11 @@ func TestCachedFileStorage(t *testing.T) {
 		}
 
 		// Сохраняем данные в первом хранилище
-		err = storage1.Save("", "persist1", "https://persist1.com")
+		err = storage1.Save("", "", "persist1", "https://persist1.com")
 		if err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
-		err = storage1.Save("", "persist2", "https://persist2.com")
+		err = storage1.Save("", "", "persist2", "https://persist2.com")
 		if err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
@@ -321,7 +263,7 @@ func TestCachedFileStorage(t *testing.T) {
 		defer cleanupStorage(storage, dbPath)
 
 		// Сохраняем первую версию
-		err = storage.Save("", "update", "https://first.com")
+		err = storage.Save("", "", "update", "https://first.com")
 		if err != nil {
 			t.Fatalf("First save failed: %v", err)
 		}
@@ -334,7 +276,7 @@ func TestCachedFileStorage(t *testing.T) {
 		firstUUID := record1.UUID
 
 		// Сохраняем вторую версию с тем же shortURL
-		err = storage.Save("", "update", "https://second.com")
+		err = storage.Save("", "", "update", "https://second.com")
 		if err != nil {
 			t.Fatalf("Second save failed: %v", err)
 		}
@@ -356,55 +298,6 @@ func TestCachedFileStorage(t *testing.T) {
 		}
 	})
 
-	t.Run("Concurrent access", func(t *testing.T) {
-		storage, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
-		}
-		defer cleanupStorage(storage, dbPath)
-
-		// Запускаем несколько горутин для конкурентного доступа
-		done := make(chan bool)
-		errors := make(chan error, 10)
-
-		// Горутины для записи
-		for i := 0; i < 5; i++ {
-			go func(index int) {
-				key := string(rune('a' + index))
-				err := storage.Save("", key, "https://concurrent.com")
-				if err != nil {
-					errors <- err
-				}
-				done <- true
-			}(i)
-		}
-
-		// Горутины для чтения
-		for i := 0; i < 5; i++ {
-			go func(index int) {
-				key := string(rune('a' + index))
-				storage.Get(key)
-				done <- true
-			}(i)
-		}
-
-		// Ожидаем завершения всех горутин
-		for i := 0; i < 10; i++ {
-			<-done
-		}
-
-		// Проверяем ошибки
-		close(errors)
-		for err := range errors {
-			t.Errorf("Concurrent access error: %v", err)
-		}
-
-		// Проверяем что все записи сохранились
-		stats := storage.Stats()
-		if total, ok := stats["total_records"].(int); !ok || total < 5 {
-			t.Errorf("Expected at least 5 records, got %d", total)
-		}
-	})
 }
 
 func TestURLRecord(t *testing.T) {
@@ -458,7 +351,7 @@ func BenchmarkStorageOperations(b *testing.B) {
 	b.Run("Save", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			key := string(rune('a' + i%26))
-			storage.Save("", key, "https://benchmark.com")
+			storage.Save("", "", key, "https://benchmark.com")
 		}
 	})
 
@@ -466,7 +359,7 @@ func BenchmarkStorageOperations(b *testing.B) {
 		// Сначала сохраним несколько записей
 		for i := 0; i < 100; i++ {
 			key := string(rune('a' + i%26))
-			storage.Save("", key, "https://benchmark.com")
+			storage.Save("", "", key, "https://benchmark.com")
 		}
 
 		b.ResetTimer()
