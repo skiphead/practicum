@@ -78,7 +78,7 @@ func (s *urlUseCase) Save(ctx context.Context, originalURL, userID string) (*ent
 	}
 
 	// Используем основное хранилище (базу данных)
-	shortURL, err := s.storageRepo.Create(ctx, "test", shortCode, originalURL)
+	shortURL, err := s.storageRepo.Create(ctx, userID, shortCode, originalURL)
 	if s.storageRepo.IsDuplicateError(err) {
 		duplicate, errGet := s.storageRepo.GetByOriginalURL(ctx, originalURL)
 		if errGet != nil {
