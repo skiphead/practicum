@@ -55,7 +55,7 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 	r.Use(loggingMiddleware)
 	r.Use(h.sessionMiddleware) // Добавляем сессионный middleware
 	r.Get("/{key}", h.redirectURL)
-	r.Get("/api/user/urls", h.getApiUserUrls)
+	r.Get("/api/user/urls", h.getAPIUserUrls)
 	r.Post("/", h.createShortURL)
 	r.Post("/api/shorten", h.createShortAPIURL)
 	r.Post("/api/shorten/batch", h.createBatchShortAPIURL)
@@ -68,13 +68,14 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 func (h *URLHandler) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var userID string
+		const keyUserId = "user_id"
 
 		// Получаем куку с токеном
 		cookie, err := r.Cookie(sessionCookieName)
 		if err != nil {
 			// Если куки нет, создаем новую сессию
 			userID = h.createNewSession(w)
-			ctx := context.WithValue(r.Context(), "user_id", userID)
+			ctx := context.WithValue(r.Context(), keyUserId, userID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
@@ -91,7 +92,7 @@ func (h *URLHandler) sessionMiddleware(next http.Handler) http.Handler {
 		if err != nil || !token.Valid {
 			// Если токен невалидный, создаем новую сессию
 			userID = h.createNewSession(w)
-			ctx := context.WithValue(r.Context(), "user_id", userID)
+			ctx := context.WithValue(r.Context(), keyUserId, userID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
@@ -110,7 +111,7 @@ func (h *URLHandler) sessionMiddleware(next http.Handler) http.Handler {
 		}
 
 		// Сохраняем user_id в контекст
-		ctx := context.WithValue(r.Context(), "user_id", userID)
+		ctx := context.WithValue(r.Context(), keyUserId, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -157,8 +158,8 @@ func (h *URLHandler) getUserIDFromContext(ctx context.Context) string {
 	return ""
 }
 
-// Обновляем метод getApiUserUrls для использования user_id из контекста
-func (h *URLHandler) getApiUserUrls(w http.ResponseWriter, r *http.Request) {
+// Обновляем метод getAPIUserUrls для использования user_id из контекста
+func (h *URLHandler) getAPIUserUrls(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	userID := h.getUserIDFromContext(r.Context())
@@ -184,8 +185,8 @@ func (h *URLHandler) getApiUserUrls(w http.ResponseWriter, r *http.Request) {
 
 	for _, url := range urls {
 		list = append(list, entity.ListByUserIDResponse{
-			OriginalUrl: url.OriginalURL,
-			ShortUrl:    fmt.Sprintf("%s/%s", h.baseURL, url.ShortCode),
+			OriginalURL: url.OriginalURL,
+			ShortURL:    fmt.Sprintf("%s/%s", h.baseURL, url.ShortCode),
 		})
 	}
 
