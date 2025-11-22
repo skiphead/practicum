@@ -1,4 +1,4 @@
-package storage
+package repository
 
 import (
 	"os"
@@ -19,7 +19,7 @@ func TestCachedFileStorage(t *testing.T) {
 		defer cleanupStorage(storage, dbPath)
 
 		if storage == nil {
-			t.Fatal("Storage should not be nil")
+			t.Fatal("FileStorage should not be nil")
 		}
 	})
 
@@ -31,7 +31,7 @@ func TestCachedFileStorage(t *testing.T) {
 		defer cleanupStorage(storage, dbPath)
 
 		// Сохраняем запись
-		err = storage.Save("abc123", "https://example.com")
+		err = storage.Save("", "abc123", "https://example.com")
 		if err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
@@ -82,7 +82,7 @@ func TestCachedFileStorage(t *testing.T) {
 		defer cleanupStorage(storage, dbPath)
 
 		// Сохраняем запись
-		err = storage.Save("test123", "https://test.com")
+		err = storage.Save("", "test123", "https://test.com")
 		if err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
@@ -124,7 +124,7 @@ func TestCachedFileStorage(t *testing.T) {
 		defer cleanupStorage(storage, dbPath)
 
 		originalURL := "https://find-me.com"
-		err = storage.Save("find456", originalURL)
+		err = storage.Save("", "find456", originalURL)
 		if err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
@@ -162,7 +162,7 @@ func TestCachedFileStorage(t *testing.T) {
 		defer cleanupStorage(storage, dbPath)
 
 		// Сохраняем запись
-		err = storage.Save("todelete", "https://delete.com")
+		err = storage.Save("", "todelete", "https://delete.com")
 		if err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
@@ -207,7 +207,7 @@ func TestCachedFileStorage(t *testing.T) {
 		defer cleanupStorage(storage, dbPath)
 
 		// Сохраняем запись
-		err = storage.Save("deleteid", "https://delete-id.com")
+		err = storage.Save("", "deleteid", "https://delete-id.com")
 		if err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
@@ -274,11 +274,11 @@ func TestCachedFileStorage(t *testing.T) {
 		}
 
 		// Сохраняем данные в первом хранилище
-		err = storage1.Save("persist1", "https://persist1.com")
+		err = storage1.Save("", "persist1", "https://persist1.com")
 		if err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
-		err = storage1.Save("persist2", "https://persist2.com")
+		err = storage1.Save("", "persist2", "https://persist2.com")
 		if err != nil {
 			t.Fatalf("Save failed: %v", err)
 		}
@@ -321,7 +321,7 @@ func TestCachedFileStorage(t *testing.T) {
 		defer cleanupStorage(storage, dbPath)
 
 		// Сохраняем первую версию
-		err = storage.Save("update", "https://first.com")
+		err = storage.Save("", "update", "https://first.com")
 		if err != nil {
 			t.Fatalf("First save failed: %v", err)
 		}
@@ -334,7 +334,7 @@ func TestCachedFileStorage(t *testing.T) {
 		firstUUID := record1.UUID
 
 		// Сохраняем вторую версию с тем же shortURL
-		err = storage.Save("update", "https://second.com")
+		err = storage.Save("", "update", "https://second.com")
 		if err != nil {
 			t.Fatalf("Second save failed: %v", err)
 		}
@@ -371,7 +371,7 @@ func TestCachedFileStorage(t *testing.T) {
 		for i := 0; i < 5; i++ {
 			go func(index int) {
 				key := string(rune('a' + index))
-				err := storage.Save(key, "https://concurrent.com")
+				err := storage.Save("", key, "https://concurrent.com")
 				if err != nil {
 					errors <- err
 				}
@@ -432,7 +432,7 @@ func TestURLRecord(t *testing.T) {
 }
 
 // Вспомогательная функция для очистки
-func cleanupStorage(storage Storage, dbPath string) {
+func cleanupStorage(storage FileStorage, dbPath string) {
 	// Если storage реализует Close, вызываем его
 	if closer, ok := storage.(interface{ Close() error }); ok {
 		closer.Close()
@@ -458,7 +458,7 @@ func BenchmarkStorageOperations(b *testing.B) {
 	b.Run("Save", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			key := string(rune('a' + i%26))
-			storage.Save(key, "https://benchmark.com")
+			storage.Save("", key, "https://benchmark.com")
 		}
 	})
 
@@ -466,7 +466,7 @@ func BenchmarkStorageOperations(b *testing.B) {
 		// Сначала сохраним несколько записей
 		for i := 0; i < 100; i++ {
 			key := string(rune('a' + i%26))
-			storage.Save(key, "https://benchmark.com")
+			storage.Save("", key, "https://benchmark.com")
 		}
 
 		b.ResetTimer()

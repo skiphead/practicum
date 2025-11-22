@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"crypto/rand"
+	"math/big"
 	"net/url"
 	"strings"
 )
@@ -22,4 +24,24 @@ func IsValidURL(s string) bool {
 	}
 
 	return true
+}
+
+const (
+	keyLength     = 8
+	randomCharset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+)
+
+func GenerateRandomKey() string {
+	buf := make([]byte, keyLength)
+	charsetLength := big.NewInt(int64(len(randomCharset)))
+
+	for i := range buf {
+		// Генерируем криптографически безопасное случайное число в диапазоне [0, len(charset))
+		randIndex, err := rand.Int(rand.Reader, charsetLength)
+		if err != nil {
+			panic(err) // Обработка ошибки генерации
+		}
+		buf[i] = randomCharset[randIndex.Int64()]
+	}
+	return string(buf)
 }

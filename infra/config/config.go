@@ -9,11 +9,13 @@ type Config struct {
 	ServerAddr      string `yaml:"server_addr"`
 	BaseURL         string `yaml:"base_url"`
 	FileStoragePath string `yaml:"file_storage_path"`
+	DatabaseDSN     string `yaml:"database_dsn"`
 }
 
 func NewDefaultConfig() *Config {
 
 	return &Config{
+
 		ServerAddr: "localhost:8080",
 	}
 }

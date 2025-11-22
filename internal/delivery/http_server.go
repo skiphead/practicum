@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"github.com/go-chi/chi/v5"
-	"log"
+	"go.uber.org/zap"
 	"net/http"
 	"time"
 
@@ -50,7 +50,7 @@ func NewNativeServer(cfg *config.Config, mux *http.ServeMux) (*Server, error) {
 func (s *Server) Start() <-chan error {
 	serverError := make(chan error, 1)
 	go func() {
-		log.Printf("Server is running on http://%s", s.Addr)
+		zap.L().Info("Starting server", zap.String("addr", s.Addr))
 		if err := s.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverError <- err
 		}
@@ -62,6 +62,6 @@ func (s *Server) Start() <-chan error {
 func (s *Server) Shutdown(timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	log.Println("Server is shutting down...")
+	zap.L().Info("Shutting down server", zap.String("addr", s.Addr))
 	return s.Server.Shutdown(ctx)
 }

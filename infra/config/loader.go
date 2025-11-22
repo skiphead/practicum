@@ -4,8 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"gopkg.in/yaml.v3"
+	"log"
 	"os"
 )
+
+const schema = "http"
 
 func LoadConfig(configPath string) (*Config, error) {
 	config := &Config{}
@@ -16,14 +19,18 @@ func LoadConfig(configPath string) (*Config, error) {
 		}
 	}
 
-	var flagServerAddr, flagBaseURL, flagFileStoragePath string
+	var flagServerAddr, flagBaseURL, flagFileStoragePath, flagDataBaseDSN string
 	flag.StringVar(&flagServerAddr, "a", "", "Порт для запуска сервера")
 	flag.StringVar(&flagBaseURL, "b", "", "Базовый адрес результирующего сокращённого URL")
+	flag.StringVar(&flagDataBaseDSN, "d", "", "user=postgres password=secret host=localhost port=5432 database=pgx_test sslmode=disable")
 	flag.StringVar(&flagFileStoragePath, "f", "", "Путь до файла хранилища")
 	flag.Parse()
 
 	if flagServerAddr != "" {
 		config.ServerAddr = flagServerAddr
+	}
+	if flagDataBaseDSN != "" {
+		config.DatabaseDSN = flagDataBaseDSN
 	}
 	if flagBaseURL != "" {
 		config.BaseURL = flagBaseURL
@@ -35,13 +42,26 @@ func LoadConfig(configPath string) (*Config, error) {
 	if env := os.Getenv("SERVER_ADDRESS"); env != "" {
 		config.ServerAddr = env
 	}
+	if env := os.Getenv("DATABASE_DSN"); env != "" {
+		log.Println(env)
+		config.DatabaseDSN = env
+	}
 	if env := os.Getenv("FILE_STORAGE_PATH"); env != "" {
 		config.FileStoragePath = env
+	}
+
+	if config.DatabaseDSN == "" {
+		config.DatabaseDSN = "user=postgres password=postgres host=localhost port=5432 database=pgx_test sslmode=disable"
 	}
 
 	if config.ServerAddr == "" {
 		config.ServerAddr = "localhost:8080"
 	}
+
+	if config.BaseURL == "" {
+		config.BaseURL = fmt.Sprintf("%s://%s", schema, config.ServerAddr)
+	}
+
 	if config.FileStoragePath == "" {
 		config.FileStoragePath = "data.json"
 	}
