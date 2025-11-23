@@ -5,14 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/skiphead/practicum/internal/domain/entity"
 	"os"
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/google/uuid"
+	"github.com/skiphead/practicum/internal/domain/entity"
+	"go.uber.org/zap"
 )
 
 // FileStorage интерфейс для хранения URL
@@ -26,7 +25,7 @@ type FileStorage interface {
 	DeleteByID(id string) error
 	SetDeletedByUserIDAndURLs(userID string, shortURLs []string, deleted bool) error
 	Stats() map[string]interface{}
-	BatchSave(ctx context.Context, in []entity.ShortURL) error // Добавлен в интерфейс
+	BatchSave(ctx context.Context, in []entity.ShortURL) error
 }
 
 // URLRecord представляет структуру хранимых данных URL
@@ -108,12 +107,7 @@ func (s *cachedFileStorage) loadCacheFromFile() error {
 			continue
 		}
 
-		// Пропускаем удаленные записи при загрузке
-		if record.Deleted {
-			continue
-		}
-
-		// Заполняем кэш и индексы
+		// Загружаем ВСЕ записи, включая удаленные
 		s.addToCacheAndIndexes(&record)
 	}
 
@@ -128,13 +122,31 @@ func (s *cachedFileStorage) loadCacheFromFile() error {
 func (s *cachedFileStorage) addToCacheAndIndexes(record *URLRecord) {
 	s.cache[record.ShortURL] = record
 	s.cacheByID[record.UUID] = record
-	s.originalURLIndex[record.OriginalURL] = record
 
-	// Добавляем в индекс по user_id
+	// В индекс по оригинальному URL добавляем только неудаленные записи
+	if !record.Deleted {
+		s.originalURLIndex[record.OriginalURL] = record
+	}
+
+	// В индекс по user_id добавляем все записи, но фильтруем по статусу в методах поиска
 	if _, exists := s.userIDIndex[record.UserID]; !exists {
 		s.userIDIndex[record.UserID] = make([]*URLRecord, 0)
 	}
-	s.userIDIndex[record.UserID] = append(s.userIDIndex[record.UserID], record)
+
+	// Проверяем, нет ли уже этой записи в индексе
+	found := false
+	for i, existingRecord := range s.userIDIndex[record.UserID] {
+		if existingRecord.UUID == record.UUID {
+			// Обновляем существующую запись
+			s.userIDIndex[record.UserID][i] = record
+			found = true
+			break
+		}
+	}
+
+	if !found {
+		s.userIDIndex[record.UserID] = append(s.userIDIndex[record.UserID], record)
+	}
 }
 
 // removeFromIndexes удаляет запись из индексов (но оставляет в основном кэше для логического удаления)
@@ -142,19 +154,7 @@ func (s *cachedFileStorage) removeFromIndexes(record *URLRecord) {
 	// Удаляем из индекса по оригинальному URL
 	delete(s.originalURLIndex, record.OriginalURL)
 
-	// Удаляем из индекса по user_id
-	if userRecords, exists := s.userIDIndex[record.UserID]; exists {
-		for i, userRecord := range userRecords {
-			if userRecord.UUID == record.UUID {
-				s.userIDIndex[record.UserID] = append(userRecords[:i], userRecords[i+1:]...)
-				break
-			}
-		}
-		// Если у пользователя не осталось записей, удаляем его из индекса
-		if len(s.userIDIndex[record.UserID]) == 0 {
-			delete(s.userIDIndex, record.UserID)
-		}
-	}
+	// Из индекса по user_id не удаляем, но будем фильтровать в методах поиска
 }
 
 // Save сохраняет URL-маппинг в файл и обновляет кэш
@@ -162,7 +162,7 @@ func (s *cachedFileStorage) Save(userID, correlationID, key, url string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Проверяем, не существует ли уже такой оригинальный URL
+	// Проверяем, не существует ли уже такой оригинальный URL (только среди активных)
 	if existing, exists := s.originalURLIndex[url]; exists {
 		return fmt.Errorf("URL already exists: %s", existing.ShortURL)
 	}
@@ -197,7 +197,7 @@ func (s *cachedFileStorage) BatchSave(ctx context.Context, in []entity.ShortURL)
 		return ctx.Err()
 	default:
 		for _, i := range in {
-			// Проверяем, не существует ли уже такой оригинальный URL
+			// Проверяем, не существует ли уже такой оригинальный URL (только среди активных)
 			if existing, exists := s.originalURLIndex[i.OriginalURL]; exists {
 				zap.L().Warn("URL already exists, skipping",
 					zap.String("original_url", i.OriginalURL),
@@ -255,19 +255,19 @@ func (s *cachedFileStorage) appendRecordToFile(record *URLRecord) error {
 	return nil
 }
 
-// Get получает URL по ключу из кэша
+// Get получает URL по ключу из кэша (возвращает записи с любым статусом deleted)
 func (s *cachedFileStorage) Get(key string) (*URLRecord, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	record, exists := s.cache[key]
-	if !exists || record.Deleted {
+	if !exists {
 		return nil, false, nil
 	}
 	return record, true, nil
 }
 
-// GetByID получает запись по UUID из кэша
+// GetByID получает запись по UUID из кэша (возвращает записи с любым статусом deleted)
 func (s *cachedFileStorage) GetByID(id string) (*URLRecord, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -285,7 +285,7 @@ func (s *cachedFileStorage) Delete(shortURL string) error {
 	defer s.mu.Unlock()
 
 	record, exists := s.cache[shortURL]
-	if !exists || record.Deleted {
+	if !exists {
 		return fmt.Errorf("record not found with short URL: %s", shortURL)
 	}
 
@@ -303,7 +303,7 @@ func (s *cachedFileStorage) DeleteByID(id string) error {
 	defer s.mu.Unlock()
 
 	record, exists := s.cacheByID[id]
-	if !exists || record.Deleted {
+	if !exists {
 		return fmt.Errorf("record not found with id: %s", id)
 	}
 
@@ -315,7 +315,7 @@ func (s *cachedFileStorage) DeleteByID(id string) error {
 	return s.appendRecordToFile(record)
 }
 
-// FindByOriginalURL ищет запись по оригинальному URL в индексе
+// FindByOriginalURL ищет запись по оригинальному URL в индексе (только активные)
 func (s *cachedFileStorage) FindByOriginalURL(originalURL string) (*URLRecord, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -327,7 +327,7 @@ func (s *cachedFileStorage) FindByOriginalURL(originalURL string) (*URLRecord, e
 	return record, nil
 }
 
-// FindByUserID ищет все записи по user_id в индексе
+// FindByUserID ищет все записи по user_id в индексе (только активные)
 func (s *cachedFileStorage) FindByUserID(userID string) ([]URLRecord, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -337,13 +337,15 @@ func (s *cachedFileStorage) FindByUserID(userID string) ([]URLRecord, error) {
 		return []URLRecord{}, nil // Возвращаем пустой срез вместо ошибки
 	}
 
-	// Создаем копии для безопасного возврата
-	result := make([]URLRecord, len(records))
-	for i, record := range records {
-		result[i] = *record
+	// Фильтруем только активные записи
+	var activeRecords []URLRecord
+	for _, record := range records {
+		if !record.Deleted {
+			activeRecords = append(activeRecords, *record)
+		}
 	}
 
-	return result, nil
+	return activeRecords, nil
 }
 
 // SetDeletedByUserIDAndURLs устанавливает флаг deleted для конкретных URL пользователя
@@ -384,7 +386,8 @@ func (s *cachedFileStorage) SetDeletedByUserIDAndURLs(userID string, shortURLs [
 		if deleted {
 			s.removeFromIndexes(record)
 		} else {
-			s.addToCacheAndIndexes(record)
+			// При восстановлении добавляем обратно в индексы
+			s.originalURLIndex[record.OriginalURL] = record
 		}
 
 		updatedRecords = append(updatedRecords, record)
@@ -417,16 +420,14 @@ func (s *cachedFileStorage) CompactFile() error {
 
 	writer := bufio.NewWriter(tempFile)
 
-	// Записываем только активные записи
+	// Записываем все записи (включая удаленные)
 	for _, record := range s.cache {
-		if !record.Deleted {
-			data, err := json.Marshal(record)
-			if err != nil {
-				return fmt.Errorf("error marshaling record: %w", err)
-			}
-			if _, err := writer.Write(append(data, '\n')); err != nil {
-				return fmt.Errorf("error writing to temp file: %w", err)
-			}
+		data, err := json.Marshal(record)
+		if err != nil {
+			return fmt.Errorf("error marshaling record: %w", err)
+		}
+		if _, err := writer.Write(append(data, '\n')); err != nil {
+			return fmt.Errorf("error writing to temp file: %w", err)
 		}
 	}
 

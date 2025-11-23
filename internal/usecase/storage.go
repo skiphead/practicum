@@ -106,16 +106,11 @@ func (uc *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortU
 			return nil, fmt.Errorf("short URL with code '%s' not found", shortCode)
 		}
 
-		var active bool
-		if resp.Deleted {
-			active = false
-		}
-
 		return &entity.ShortURL{
 			ID:          resp.UUID,
 			OriginalURL: resp.OriginalURL,
 			ShortCode:   shortCode,
-			IsActive:    active,
+			IsActive:    resp.Deleted == false,
 		}, nil
 	}
 
@@ -143,6 +138,7 @@ func (uc *urlUseCase) GetByUserID(ctx context.Context, userID string) ([]entity.
 				ID:          url.UUID,
 				OriginalURL: url.OriginalURL,
 				ShortCode:   url.ShortURL,
+				IsActive:    url.Deleted == false,
 			})
 		}
 
