@@ -61,6 +61,7 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 	r.Use(h.sessionMiddleware) // Добавляем сессионный middleware
 	r.Get("/{key}", h.redirectURL)
 	r.Get("/api/user/urls", h.getAPIUserUrls)
+	r.Delete("/api/user/urls", h.deleteAPIUserUrls)
 	r.Post("/", h.createShortURL)
 	r.Post("/api/shorten", h.createShortAPIURL)
 	r.Post("/api/shorten/batch", h.createBatchShortAPIURL)
@@ -162,7 +163,7 @@ func (h *URLHandler) getUserIDFromContext(ctx context.Context) string {
 	return ""
 }
 
-// Обновляем метод getAPIUserUrls для использования user_id из контекста
+// getAPIUserUrls вернет все активные шорты пользователя.
 func (h *URLHandler) getAPIUserUrls(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -195,6 +196,43 @@ func (h *URLHandler) getAPIUserUrls(w http.ResponseWriter, r *http.Request) {
 	}
 
 	render.JSON(w, r, list)
+}
+
+// deleteAPIUserUrls установит флаг is_active в false
+func (h *URLHandler) deleteAPIUserUrls(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	userID := h.getUserIDFromContext(r.Context())
+	if userID == "" {
+		http.Error(w, "User not found", http.StatusUnauthorized)
+		return
+	}
+
+	body, err := h.readRequestBody(r)
+	if err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+	var shortCodes []string
+	err = json.Unmarshal(body, &shortCodes)
+	if err != nil {
+		render.Status(r, http.StatusBadRequest)
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), time.Second*5)
+	defer cancel()
+
+	if len(shortCodes) == 0 {
+		return
+	}
+
+	err = h.storage.Deleted(ctx, shortCodes, userID)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusAccepted)
 }
 
 // Обновляем методы сохранения URL для использования user_id
@@ -427,6 +465,11 @@ func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	if !data.IsActive {
+		w.WriteHeader(http.StatusGone)
 		return
 	}
 

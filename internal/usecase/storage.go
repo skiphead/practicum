@@ -2,17 +2,15 @@ package usecase
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/internal/domain/repository"
 	"github.com/skiphead/practicum/pkg/utils"
+	"go.uber.org/zap"
+	"time"
 )
 
-// Ошибки базы данных
-var (
-	ErrDuplicateKey = errors.New("запись уже существует")
-)
+const batchSize = 100
 
 type URLUseCase interface {
 	Ping(ctx context.Context) error
@@ -22,6 +20,7 @@ type URLUseCase interface {
 	Save(ctx context.Context, originalURL, userID string) (*entity.ShortURL, error)
 	BatchSave(ctx context.Context, in []entity.BatchShortenRequest, userID string) ([]entity.BatchShortenResponse, error)
 	FindDuplicateURLs(ctx context.Context, urls []entity.BatchShortenRequest) ([]entity.BatchShortenResponse, error)
+	Deleted(ctx context.Context, shortCodes []string, userID string) error
 }
 
 // urlUseCase реализует бизнес-логику работы с сокращенными URL
@@ -41,33 +40,33 @@ func NewStorageUseCase(baseURL string, fs repository.FileStorage, repo repositor
 }
 
 // Ping проверяет доступность основного хранилища
-func (s *urlUseCase) Ping(ctx context.Context) error {
-	return s.storageRepo.Ping(ctx)
+func (uc *urlUseCase) Ping(ctx context.Context) error {
+	return uc.storageRepo.Ping(ctx)
 }
 
 // isDatabaseAvailable проверяет, доступна ли база данных
-func (s *urlUseCase) isDatabaseAvailable(ctx context.Context) bool {
-	return s.storageRepo.Ping(ctx) == nil
+func (uc *urlUseCase) isDatabaseAvailable(ctx context.Context) bool {
+	return uc.storageRepo.Ping(ctx) == nil
 }
 
 // buildShortURL создает полный короткий URL
-func (s *urlUseCase) buildShortURL(shortCode string) string {
-	return fmt.Sprintf("%s/%s", s.baseURL, shortCode)
+func (uc *urlUseCase) buildShortURL(shortCode string) string {
+	return fmt.Sprintf("%s/%s", uc.baseURL, shortCode)
 }
 
 // IsDuplicateError унифицированная проверка на ошибку дублирования
-func (s *urlUseCase) IsDuplicateError(err error) bool {
+func (uc *urlUseCase) IsDuplicateError(err error) bool {
 
-	return s.storageRepo.IsDuplicateError(err)
+	return uc.storageRepo.IsDuplicateError(err)
 }
 
 // Save сохраняет оригинальный URL и возвращает сокращенную версию
-func (s *urlUseCase) Save(ctx context.Context, originalURL, userID string) (*entity.ShortURL, error) {
+func (uc *urlUseCase) Save(ctx context.Context, originalURL, userID string) (*entity.ShortURL, error) {
 	shortCode := utils.GenerateRandomKey()
 
-	if !s.isDatabaseAvailable(ctx) {
+	if !uc.isDatabaseAvailable(ctx) {
 		// Используем файловое хранилище как fallback
-		if err := s.fileStorage.Save(userID, "", shortCode, originalURL); err != nil {
+		if err := uc.fileStorage.Save(userID, "", shortCode, originalURL); err != nil {
 			return nil, fmt.Errorf("save to file storage: %w", err)
 		}
 
@@ -78,9 +77,9 @@ func (s *urlUseCase) Save(ctx context.Context, originalURL, userID string) (*ent
 	}
 
 	// Используем основное хранилище (базу данных)
-	shortURL, err := s.storageRepo.Create(ctx, userID, shortCode, originalURL)
-	if s.storageRepo.IsDuplicateError(err) {
-		duplicate, errGet := s.storageRepo.GetByOriginalURL(ctx, originalURL)
+	shortURL, err := uc.storageRepo.Create(ctx, userID, shortCode, originalURL)
+	if uc.storageRepo.IsDuplicateError(err) {
+		duplicate, errGet := uc.storageRepo.GetByOriginalURL(ctx, originalURL)
 		if errGet != nil {
 			return nil, errGet
 		}
@@ -96,15 +95,15 @@ func (s *urlUseCase) Save(ctx context.Context, originalURL, userID string) (*ent
 }
 
 // Get возвращает оригинальный URL по короткому коду
-func (s *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortURL, error) {
-	if !s.isDatabaseAvailable(ctx) {
+func (uc *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortURL, error) {
+	if !uc.isDatabaseAvailable(ctx) {
 		// Используем файловое хранилище как fallback
-		resp, exists, err := s.fileStorage.Get(shortCode)
+		resp, exists, err := uc.fileStorage.Get(shortCode)
 		if err != nil {
 			return nil, fmt.Errorf("get from file storage: %w", err)
 		}
 		if !exists {
-			return nil, fmt.Errorf("short URL with code '%s' not found", shortCode)
+			return nil, fmt.Errorf("short URL with code '%uc' not found", shortCode)
 		}
 
 		return &entity.ShortURL{
@@ -115,7 +114,7 @@ func (s *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortUR
 	}
 
 	// Используем основное хранилище (базу данных)
-	shortURL, err := s.storageRepo.Get(ctx, shortCode)
+	shortURL, err := uc.storageRepo.Get(ctx, shortCode)
 	if err != nil {
 		return nil, fmt.Errorf("get from database: %w", err)
 	}
@@ -124,11 +123,11 @@ func (s *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortUR
 }
 
 // GetByUserID возвращает список коротких url по id пользователя
-func (s *urlUseCase) GetByUserID(ctx context.Context, userID string) ([]entity.ShortURL, error) {
+func (uc *urlUseCase) GetByUserID(ctx context.Context, userID string) ([]entity.ShortURL, error) {
 	var list []entity.ShortURL
-	if !s.isDatabaseAvailable(ctx) {
+	if !uc.isDatabaseAvailable(ctx) {
 		// Используем файловое хранилище как fallback
-		resp, err := s.fileStorage.FindByUserID(userID)
+		resp, err := uc.fileStorage.FindByUserID(userID)
 		if err != nil {
 			return nil, fmt.Errorf("get from file storage: %w", err)
 		}
@@ -145,7 +144,7 @@ func (s *urlUseCase) GetByUserID(ctx context.Context, userID string) ([]entity.S
 	}
 
 	// Используем основное хранилище (базу данных)
-	shortURL, err := s.storageRepo.GetByUserID(ctx, userID)
+	shortURL, err := uc.storageRepo.GetByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get from database: %w", err)
 	}
@@ -153,11 +152,11 @@ func (s *urlUseCase) GetByUserID(ctx context.Context, userID string) ([]entity.S
 	return shortURL, nil
 }
 
-func (s *urlUseCase) FindDuplicateURLs(ctx context.Context, urls []entity.BatchShortenRequest) ([]entity.BatchShortenResponse, error) {
+func (uc *urlUseCase) FindDuplicateURLs(ctx context.Context, urls []entity.BatchShortenRequest) ([]entity.BatchShortenResponse, error) {
 
 	response := make([]entity.BatchShortenResponse, 0, len(urls))
 
-	createdURLs, err := s.storageRepo.FindDuplicateURLs(ctx, urls)
+	createdURLs, err := uc.storageRepo.FindDuplicateURLs(ctx, urls)
 	if err != nil {
 		return nil, fmt.Errorf("find duplicate URLs: %w", err)
 	}
@@ -165,7 +164,7 @@ func (s *urlUseCase) FindDuplicateURLs(ctx context.Context, urls []entity.BatchS
 	for _, url := range createdURLs {
 		response = append(response, entity.BatchShortenResponse{
 			CorrelationID: url.CorrelationID,
-			ShortURL:      s.buildShortURL(url.ShortCode),
+			ShortURL:      uc.buildShortURL(url.ShortCode),
 		})
 	}
 
@@ -173,32 +172,32 @@ func (s *urlUseCase) FindDuplicateURLs(ctx context.Context, urls []entity.BatchS
 }
 
 // BatchSave сохраняет пакет URL и возвращает сокращенные версии
-func (s *urlUseCase) BatchSave(ctx context.Context, urls []entity.BatchShortenRequest, userID string) ([]entity.BatchShortenResponse, error) {
+func (uc *urlUseCase) BatchSave(ctx context.Context, urls []entity.BatchShortenRequest, userID string) ([]entity.BatchShortenResponse, error) {
 	if len(urls) == 0 {
 		return []entity.BatchShortenResponse{}, nil
 	}
 
 	response := make([]entity.BatchShortenResponse, 0, len(urls))
 
-	if !s.isDatabaseAvailable(ctx) {
+	if !uc.isDatabaseAvailable(ctx) {
 		// Используем файловое хранилище как fallback
 		for _, item := range urls {
 			code := utils.GenerateRandomKey()
-			if err := s.fileStorage.Save(userID, item.CorrelationID, code, item.OriginalURL); err != nil {
+			if err := uc.fileStorage.Save(userID, item.CorrelationID, code, item.OriginalURL); err != nil {
 				return nil, fmt.Errorf("save batch item to file storage: %w", err)
 			}
 
 			response = append(response, entity.BatchShortenResponse{
 				CorrelationID: item.CorrelationID,
-				ShortURL:      s.buildShortURL(code),
+				ShortURL:      uc.buildShortURL(code),
 			})
 		}
 		return response, nil
 	}
 
 	// Используем основное хранилище (базу данных)
-	const batchSize = 1000
-	createdURLs, err := s.storageRepo.CreateBatch(ctx, userID, urls, batchSize)
+
+	createdURLs, err := uc.storageRepo.CreateBatch(ctx, userID, urls, batchSize)
 	if err != nil {
 
 		return nil, fmt.Errorf("create batch urls database: %w", err)
@@ -207,9 +206,88 @@ func (s *urlUseCase) BatchSave(ctx context.Context, urls []entity.BatchShortenRe
 	for _, url := range createdURLs {
 		response = append(response, entity.BatchShortenResponse{
 			CorrelationID: url.CorrelationID,
-			ShortURL:      s.buildShortURL(url.ShortCode),
+			ShortURL:      uc.buildShortURL(url.ShortCode),
 		})
 	}
 
 	return response, nil
+}
+
+func (uc *urlUseCase) Deleted(ctx context.Context, shortCodes []string, userID string) error {
+	if len(shortCodes) == 0 {
+		return fmt.Errorf("empty short code")
+	}
+	if userID == "" {
+		return fmt.Errorf("empty user ID")
+	}
+
+	// Если база недоступна, синхронно работаем с файловым хранилищем
+	if !uc.isDatabaseAvailable(ctx) {
+		if err := uc.fileStorage.SetDeletedByUserIDAndURLs(userID, shortCodes, true); err != nil {
+			return fmt.Errorf("delete shortCode: %w", err)
+		}
+		return nil
+	}
+
+	// Запускаем фоновую обработку базы данных
+	go uc.processDeletionInBackground(shortCodes, userID)
+
+	return nil
+}
+
+func (uc *urlUseCase) processDeletionInBackground(shortCodes []string, userID string) {
+	// Создаем отдельный контекст для фоновой операции
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Разбиваем на батчи
+	batches := make([][]string, 0, (len(shortCodes)+batchSize-1)/batchSize)
+	for i := 0; i < len(shortCodes); i += batchSize {
+		end := i + batchSize
+		if end > len(shortCodes) {
+			end = len(shortCodes)
+		}
+		batches = append(batches, shortCodes[i:end])
+	}
+
+	// Fan-out: запускаем обработку батчей в отдельных горутинах
+	results := make(chan struct {
+		noFounds []string
+		err      error
+	}, len(batches))
+
+	for _, batch := range batches {
+		go func(b []string) {
+			noFounds, err := uc.storageRepo.UpdateIsActive(ctx, b, userID, false, len(b))
+			results <- struct {
+				noFounds []string
+				err      error
+			}{noFounds, err}
+		}(batch)
+	}
+
+	// Fan-in: собираем результаты из всех горутин
+	var allNoFounds []string
+	var errors []error
+
+	for i := 0; i < len(batches); i++ {
+		result := <-results
+		if result.err != nil {
+			errors = append(errors, result.err)
+		}
+		allNoFounds = append(allNoFounds, result.noFounds...)
+	}
+	close(results)
+
+	// Логируем результаты фоновой операции
+	if len(errors) > 0 {
+		zap.L().Error("errors during background deletion",
+			zap.Errors("errors", errors),
+			zap.Strings("short_codes", shortCodes))
+	}
+
+	if len(allNoFounds) > 0 {
+		zap.L().Warn("some short codes not found during deletion",
+			zap.Strings("not_found_short_codes", allNoFounds))
+	}
 }

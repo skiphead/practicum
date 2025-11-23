@@ -24,6 +24,7 @@ type FileStorage interface {
 	FindByUserID(userID string) ([]URLRecord, error)
 	Delete(shortURL string) error
 	DeleteByID(id string) error
+	SetDeletedByUserIDAndURLs(userID string, shortURLs []string, deleted bool) error
 	Stats() map[string]interface{}
 	BatchSave(ctx context.Context, in []entity.ShortURL) error // Добавлен в интерфейс
 }
@@ -343,6 +344,60 @@ func (s *cachedFileStorage) FindByUserID(userID string) ([]URLRecord, error) {
 	}
 
 	return result, nil
+}
+
+// SetDeletedByUserIDAndURLs устанавливает флаг deleted для конкретных URL пользователя
+func (s *cachedFileStorage) SetDeletedByUserIDAndURLs(userID string, shortURLs []string, deleted bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var updatedRecords []*URLRecord
+
+	// Получаем все записи пользователя
+	userRecords, exists := s.userIDIndex[userID]
+	if !exists {
+		return fmt.Errorf("no records found for user: %s", userID)
+	}
+
+	// Создаем карту для быстрого поиска
+	urlMap := make(map[string]*URLRecord)
+	for _, record := range userRecords {
+		urlMap[record.ShortURL] = record
+	}
+
+	// Обновляем только указанные URL
+	for _, shortURL := range shortURLs {
+		record, e := urlMap[shortURL]
+		if !e {
+			continue // Пропускаем несуществующие URL
+		}
+
+		// Если флаг уже установлен в нужное значение, пропускаем
+		if record.Deleted == deleted {
+			continue
+		}
+
+		// Устанавливаем флаг
+		record.Deleted = deleted
+
+		// Обновляем индексы
+		if deleted {
+			s.removeFromIndexes(record)
+		} else {
+			s.addToCacheAndIndexes(record)
+		}
+
+		updatedRecords = append(updatedRecords, record)
+	}
+
+	// Записываем изменения в файл
+	for _, record := range updatedRecords {
+		if err := s.appendRecordToFile(record); err != nil {
+			return fmt.Errorf("failed to update record in file: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // CompactFile выполняет сжатие файла, удаляя логически удаленные записи
