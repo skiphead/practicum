@@ -1,371 +1,389 @@
 package repository
 
 import (
+	"context"
 	"os"
-	"path/filepath"
 	"testing"
-	"time"
+
+	"github.com/skiphead/practicum/internal/domain/entity"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestCachedFileStorage(t *testing.T) {
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "test_db.json")
+	// Создаем временный файл для тестов
+	tmpFile, err := os.CreateTemp("", "test_storage_*.json")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
 
-	t.Run("NewCachedFileStorage", func(t *testing.T) {
-		storage, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
-		}
-		defer cleanupStorage(storage, dbPath)
-
-		if storage == nil {
-			t.Fatal("FileStorage should not be nil")
-		}
-	})
+	// Создаем хранилище
+	storage, err := NewCachedFileStorage(tmpFile.Name())
+	require.NoError(t, err)
+	require.NotNil(t, storage)
 
 	t.Run("Save and Get", func(t *testing.T) {
-		storage, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
-		}
-		defer cleanupStorage(storage, dbPath)
+		err := storage.Save("user1", "corr1", "abc123", "https://example.com")
+		assert.NoError(t, err)
 
-		// Сохраняем запись
-		err = storage.Save("", "", "abc123", "https://example.com")
-		if err != nil {
-			t.Fatalf("Save failed: %v", err)
-		}
-
-		// Получаем запись
 		record, found, err := storage.Get("abc123")
-		if err != nil {
-			t.Fatalf("Get failed: %v", err)
-		}
-		if !found {
-			t.Fatal("Record should be found")
-		}
-		if record.ShortURL != "abc123" {
-			t.Errorf("Expected ShortURL 'abc123', got '%s'", record.ShortURL)
-		}
-		if record.OriginalURL != "https://example.com" {
-			t.Errorf("Expected OriginalURL 'https://example.com', got '%s'", record.OriginalURL)
-		}
-		if record.UUID == "" {
-			t.Error("UUID should not be empty")
-		}
+		assert.NoError(t, err)
+		assert.True(t, found)
+		assert.NotNil(t, record)
+		assert.Equal(t, "https://example.com", record.OriginalURL)
+		assert.Equal(t, "abc123", record.ShortCode)
+		assert.Equal(t, "user1", record.UserID)
+		assert.True(t, record.IsActive)
+	})
+
+	t.Run("Save duplicate URL", func(t *testing.T) {
+		err := storage.Save("user2", "corr2", "def456", "https://example.com")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "URL already exists")
 	})
 
 	t.Run("Get non-existent", func(t *testing.T) {
-		storage, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
-		}
-		defer cleanupStorage(storage, dbPath)
-
 		record, found, err := storage.Get("nonexistent")
-		if err != nil {
-			t.Fatalf("Get failed: %v", err)
-		}
-		if found {
-			t.Fatal("Record should not be found")
-		}
-		if record != nil {
-			t.Error("Record should be nil for non-existent key")
-		}
+		assert.NoError(t, err)
+		assert.False(t, found)
+		assert.Nil(t, record)
 	})
 
 	t.Run("GetByID", func(t *testing.T) {
-		storage, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
-		}
-		defer cleanupStorage(storage, dbPath)
+		// Сначала сохраним запись
+		err := storage.Save("user3", "corr3", "ghi789", "https://google.com")
+		assert.NoError(t, err)
 
-		// Сохраняем запись
-		err = storage.Save("", "", "test123", "https://test.com")
-		if err != nil {
-			t.Fatalf("Save failed: %v", err)
-		}
+		// Получим запись по ShortCode чтобы узнать ID
+		record, found, err := storage.Get("ghi789")
+		assert.NoError(t, err)
+		assert.True(t, found)
 
-		// Получаем запись по shortURL чтобы узнать ID
-		record, found, err := storage.Get("test123")
-		if err != nil || !found {
-			t.Fatalf("Failed to get record: %v", err)
-		}
-
-		// Получаем по ID
-		recordByID, _, err := storage.GetByID(record.UUID)
-		if err != nil {
-			t.Fatalf("GetByID failed: %v", err)
-		}
-		if recordByID.ShortURL != "test123" {
-			t.Errorf("Expected ShortURL 'test123', got '%s'", recordByID.ShortURL)
-		}
+		// Теперь получим по ID
+		recordByID, found, err := storage.GetByID(record.ID)
+		assert.NoError(t, err)
+		assert.True(t, found)
+		assert.Equal(t, record.ID, recordByID.ID)
+		assert.Equal(t, "https://google.com", recordByID.OriginalURL)
 	})
 
 	t.Run("FindByOriginalURL", func(t *testing.T) {
-		storage, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
-		}
-		defer cleanupStorage(storage, dbPath)
+		record, err := storage.FindByOriginalURL("https://example.com")
+		assert.NoError(t, err)
+		assert.NotNil(t, record)
+		assert.Equal(t, "abc123", record.ShortCode)
 
-		originalURL := "https://find-me.com"
-		err = storage.Save("", "", "find456", originalURL)
-		if err != nil {
-			t.Fatalf("Save failed: %v", err)
-		}
-
-		record, err := storage.FindByOriginalURL(originalURL)
-		if err != nil {
-			t.Fatalf("FindByOriginalURL failed: %v", err)
-		}
-		if record.OriginalURL != originalURL {
-			t.Errorf("Expected OriginalURL '%s', got '%s'", originalURL, record.OriginalURL)
-		}
-		if record.ShortURL != "find456" {
-			t.Errorf("Expected ShortURL 'find456', got '%s'", record.ShortURL)
-		}
+		// Несуществующий URL
+		record, err = storage.FindByOriginalURL("https://nonexistent.com")
+		assert.NoError(t, err)
+		assert.Nil(t, record)
 	})
 
-	t.Run("Delete non-existent shortURL", func(t *testing.T) {
-		storage, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
-		}
-		defer cleanupStorage(storage, dbPath)
+	t.Run("FindByUserID", func(t *testing.T) {
+		// Сохраним еще одну запись для того же пользователя
+		err := storage.Save("user1", "corr4", "jkl012", "https://user1-site.com")
+		assert.NoError(t, err)
 
-		err = storage.Delete("nonexistent")
-		if err == nil {
-			t.Error("Expected error when deleting non-existent shortURL")
+		records, err := storage.FindByUserID("user1")
+		assert.NoError(t, err)
+		assert.Len(t, records, 2)
+
+		// Проверим, что все записи принадлежат user1
+		for _, record := range records {
+			assert.Equal(t, "user1", record.UserID)
+			assert.True(t, record.IsActive)
 		}
+
+		// Несуществующий пользователь
+		records, err = storage.FindByUserID("nonexistent")
+		assert.NoError(t, err)
+		assert.Empty(t, records)
+	})
+
+	t.Run("Delete", func(t *testing.T) {
+		// Удаляем существующую запись
+		err := storage.Delete("abc123")
+		assert.NoError(t, err)
+
+		// Проверяем, что запись помечена как неактивная
+		record, found, err := storage.Get("abc123")
+		assert.NoError(t, err)
+		assert.True(t, found)
+		assert.False(t, record.IsActive)
+
+		// Проверяем, что запись не находится по оригинальному URL
+		record, err = storage.FindByOriginalURL("https://example.com")
+		assert.NoError(t, err)
+		assert.Nil(t, record)
+
+		// Проверяем, что запись не возвращается в FindByUserID
+		records, err := storage.FindByUserID("user1")
+		assert.NoError(t, err)
+		// Должна остаться только одна активная запись
+		assert.Len(t, records, 1)
+		assert.Equal(t, "jkl012", records[0].ShortCode)
+
+		// Удаление несуществующей записи
+		err = storage.Delete("nonexistent")
+		assert.Error(t, err)
 	})
 
 	t.Run("DeleteByID", func(t *testing.T) {
-		storage, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
-		}
-		defer cleanupStorage(storage, dbPath)
+		// Создаем запись для удаления
+		err := storage.Save("user4", "corr5", "mno345", "https://delete-test.com")
+		assert.NoError(t, err)
 
-		// Сохраняем запись
-		err = storage.Save("", "", "deleteid", "https://delete-id.com")
-		if err != nil {
-			t.Fatalf("Save failed: %v", err)
-		}
-
-		// Получаем ID
-		record, found, _ := storage.Get("deleteid")
-		if !found {
-			t.Fatal("Record should exist")
-		}
+		record, found, err := storage.Get("mno345")
+		assert.NoError(t, err)
+		assert.True(t, found)
 
 		// Удаляем по ID
-		err = storage.DeleteByID(record.UUID)
-		if err != nil {
-			t.Fatalf("DeleteByID failed: %v", err)
-		}
+		err = storage.DeleteByID(record.ID)
+		assert.NoError(t, err)
 
-		// Проверяем что записи больше нет
-		_, found, _ = storage.Get("deleteid")
-		if found {
-			t.Fatal("Record should not exist after deletion")
-		}
+		// Проверяем, что запись помечена как неактивная
+		record, found, err = storage.Get("mno345")
+		assert.NoError(t, err)
+		assert.True(t, found)
+		assert.False(t, record.IsActive)
 	})
 
-	t.Run("DeleteByID non-existent", func(t *testing.T) {
-		storage, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
+	t.Run("BatchSave", func(t *testing.T) {
+		batch := []entity.ShortURL{
+			{
+				UserID:        "batch_user",
+				CorrelationID: "batch1",
+				ShortCode:     "batch001",
+				OriginalURL:   "https://batch1.com",
+			},
+			{
+				UserID:        "batch_user",
+				CorrelationID: "batch2",
+				ShortCode:     "batch002",
+				OriginalURL:   "https://batch2.com",
+			},
 		}
-		defer cleanupStorage(storage, dbPath)
 
-		err = storage.DeleteByID("nonexistent-id")
-		if err == nil {
-			t.Error("Expected error when deleting non-existent ID")
-		}
+		err := storage.BatchSave(context.Background(), batch)
+		assert.NoError(t, err)
+
+		// Проверяем, что записи сохранились
+		record1, found, err := storage.Get("batch001")
+		assert.NoError(t, err)
+		assert.True(t, found)
+		assert.Equal(t, "https://batch1.com", record1.OriginalURL)
+
+		record2, found, err := storage.Get("batch002")
+		assert.NoError(t, err)
+		assert.True(t, found)
+		assert.Equal(t, "https://batch2.com", record2.OriginalURL)
+
+		// Проверяем, что записи принадлежат правильному пользователю
+		records, err := storage.FindByUserID("batch_user")
+		assert.NoError(t, err)
+		assert.Len(t, records, 2)
+	})
+
+	t.Run("SetDeletedByUserIDAndURLs", func(t *testing.T) {
+		// Создаем несколько записей для пользователя
+		err := storage.Save("test_user", "corr6", "test001", "https://test1.com")
+		assert.NoError(t, err)
+		err = storage.Save("test_user", "corr7", "test002", "https://test2.com")
+		assert.NoError(t, err)
+		err = storage.Save("test_user", "corr8", "test003", "https://test3.com")
+		assert.NoError(t, err)
+
+		// Помечаем две записи как удаленные
+		shortURLs := []string{"test001", "test002"}
+		err = storage.SetDeletedByUserIDAndURLs("test_user", shortURLs, true)
+		assert.NoError(t, err)
+
+		// Проверяем, что записи помечены как неактивные
+		record1, found, err := storage.Get("test001")
+		assert.NoError(t, err)
+		assert.True(t, found)
+		assert.False(t, record1.IsActive)
+
+		record2, found, err := storage.Get("test002")
+		assert.NoError(t, err)
+		assert.True(t, found)
+		assert.False(t, record2.IsActive)
+
+		// Проверяем, что третья запись осталась активной
+		record3, found, err := storage.Get("test003")
+		assert.NoError(t, err)
+		assert.True(t, found)
+		assert.True(t, record3.IsActive)
+
+		// Восстанавливаем одну запись
+		err = storage.SetDeletedByUserIDAndURLs("test_user", []string{"test001"}, false)
+		assert.NoError(t, err)
+
+		record1, found, err = storage.Get("test001")
+		assert.NoError(t, err)
+		assert.True(t, found)
+		assert.True(t, record1.IsActive)
 	})
 
 	t.Run("Stats", func(t *testing.T) {
-		storage, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
-		}
-		defer cleanupStorage(storage, dbPath)
-
 		stats := storage.Stats()
+		assert.NotNil(t, stats)
 
-		// Проверяем основные поля статистики
-		if stats["file_path"] != dbPath {
-			t.Errorf("Expected file_path '%s', got '%s'", dbPath, stats["file_path"])
-		}
+		// Проверяем наличие ожидаемых полей
+		assert.Contains(t, stats, "total_records")
+		assert.Contains(t, stats, "active_records")
+		assert.Contains(t, stats, "deleted_records")
+		assert.Contains(t, stats, "file_path")
+		assert.Contains(t, stats, "file_size_bytes")
+		assert.Contains(t, stats, "unique_users")
 
-		// total_records должно быть числом
-		if total, ok := stats["total_records"].(int); !ok {
-			t.Error("total_records should be an integer")
-		} else if total < 0 {
-			t.Error("total_records should be non-negative")
-		}
+		total := stats["total_records"].(int)
+		active := stats["active_records"].(int)
+		deleted := stats["deleted_records"].(int)
+
+		assert.Greater(t, total, 0)
+		assert.GreaterOrEqual(t, active, 0)
+		assert.GreaterOrEqual(t, deleted, 0)
+		assert.Equal(t, total, active+deleted)
 	})
-
-	t.Run("Persistence", func(t *testing.T) {
-		// Тестируем сохранение данных между сессиями
-		storage1, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
-		}
-
-		// Сохраняем данные в первом хранилище
-		err = storage1.Save("", "", "persist1", "https://persist1.com")
-		if err != nil {
-			t.Fatalf("Save failed: %v", err)
-		}
-		err = storage1.Save("", "", "persist2", "https://persist2.com")
-		if err != nil {
-			t.Fatalf("Save failed: %v", err)
-		}
-
-		// Закрываем первое хранилище
-		if closer, ok := storage1.(interface{ Close() error }); ok {
-			closer.Close()
-		}
-
-		// Создаем второе хранилище с тем же файлом
-		storage2, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create second storage: %v", err)
-		}
-		defer cleanupStorage(storage2, dbPath)
-
-		// Проверяем что данные сохранились
-		record1, found, err := storage2.Get("persist1")
-		if err != nil || !found {
-			t.Fatalf("Failed to get persisted record1: %v", err)
-		}
-		if record1.OriginalURL != "https://persist1.com" {
-			t.Errorf("Expected OriginalURL 'https://persist1.com', got '%s'", record1.OriginalURL)
-		}
-
-		record2, found, err := storage2.Get("persist2")
-		if err != nil || !found {
-			t.Fatalf("Failed to get persisted record2: %v", err)
-		}
-		if record2.OriginalURL != "https://persist2.com" {
-			t.Errorf("Expected OriginalURL 'https://persist2.com', got '%s'", record2.OriginalURL)
-		}
-	})
-
-	t.Run("Update existing", func(t *testing.T) {
-		storage, err := NewCachedFileStorage(dbPath)
-		if err != nil {
-			t.Fatalf("Failed to create storage: %v", err)
-		}
-		defer cleanupStorage(storage, dbPath)
-
-		// Сохраняем первую версию
-		err = storage.Save("", "", "update", "https://first.com")
-		if err != nil {
-			t.Fatalf("First save failed: %v", err)
-		}
-
-		// Получаем первую версию
-		record1, found, _ := storage.Get("update")
-		if !found {
-			t.Fatal("First record should exist")
-		}
-		firstUUID := record1.UUID
-
-		// Сохраняем вторую версию с тем же shortURL
-		err = storage.Save("", "", "update", "https://second.com")
-		if err != nil {
-			t.Fatalf("Second save failed: %v", err)
-		}
-
-		// Получаем вторую версию
-		record2, found, _ := storage.Get("update")
-		if !found {
-			t.Fatal("Second record should exist")
-		}
-
-		// UUID должен остаться тем же (или измениться? зависит от логики)
-		// В текущей реализации генерируется новый UUID при каждом Save
-		if record2.UUID == firstUUID {
-			t.Log("UUID remained the same after update")
-		}
-
-		if record2.OriginalURL != "https://second.com" {
-			t.Errorf("Expected updated OriginalURL 'https://second.com', got '%s'", record2.OriginalURL)
-		}
-	})
-
 }
 
-func TestURLRecord(t *testing.T) {
-	// Тестируем структуру URLRecord
-	now := time.Now()
-	record := URLRecord{
-		UUID:        "test-uuid",
-		ShortURL:    "abc123",
-		OriginalURL: "https://example.com",
-		CreatedAt:   now,
-	}
+func TestCachedFileStorage_EdgeCases(t *testing.T) {
+	t.Run("Empty file", func(t *testing.T) {
+		tmpFile, err := os.CreateTemp("", "test_empty_*.json")
+		require.NoError(t, err)
+		tmpFile.Close()
+		defer os.Remove(tmpFile.Name())
 
-	if record.UUID != "test-uuid" {
-		t.Errorf("Expected UUID 'test-uuid', got '%s'", record.UUID)
-	}
-	if record.ShortURL != "abc123" {
-		t.Errorf("Expected ShortURL 'abc123', got '%s'", record.ShortURL)
-	}
-	if record.OriginalURL != "https://example.com" {
-		t.Errorf("Expected OriginalURL 'https://example.com', got '%s'", record.OriginalURL)
-	}
-	if !record.CreatedAt.Equal(now) {
-		t.Error("CreatedAt time mismatch")
-	}
-}
+		storage, err := NewCachedFileStorage(tmpFile.Name())
+		assert.NoError(t, err)
+		assert.NotNil(t, storage)
 
-// Вспомогательная функция для очистки
-func cleanupStorage(storage FileStorage, dbPath string) {
-	// Если storage реализует Close, вызываем его
-	if closer, ok := storage.(interface{ Close() error }); ok {
-		closer.Close()
-	}
-
-	// Удаляем тестовый файл если он существует
-	if dbPath != "" {
-		os.Remove(dbPath)
-	}
-}
-
-// Benchmark тесты для измерения производительности
-func BenchmarkStorageOperations(b *testing.B) {
-	tmpDir := b.TempDir()
-	dbPath := filepath.Join(tmpDir, "benchmark_db.json")
-
-	storage, err := NewCachedFileStorage(dbPath)
-	if err != nil {
-		b.Fatalf("Failed to create storage: %v", err)
-	}
-	defer cleanupStorage(storage, dbPath)
-
-	b.Run("Save", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			key := string(rune('a' + i%26))
-			storage.Save("", "", key, "https://benchmark.com")
-		}
+		// Проверяем, что хранилище пустое
+		stats := storage.Stats()
+		assert.Equal(t, 0, stats["total_records"])
 	})
 
-	b.Run("Get", func(b *testing.B) {
-		// Сначала сохраним несколько записей
-		for i := 0; i < 100; i++ {
-			key := string(rune('a' + i%26))
-			storage.Save("", "", key, "https://benchmark.com")
+	t.Run("Non-existent file directory", func(t *testing.T) {
+		storage, err := NewCachedFileStorage("/non/existent/directory/file.json")
+		assert.Error(t, err)
+		assert.Nil(t, storage)
+	})
+
+	t.Run("Context cancellation in BatchSave", func(t *testing.T) {
+		tmpFile, err := os.CreateTemp("", "test_context_*.json")
+		require.NoError(t, err)
+		tmpFile.Close()
+		defer os.Remove(tmpFile.Name())
+
+		storage, err := NewCachedFileStorage(tmpFile.Name())
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Немедленно отменяем контекст
+
+		batch := []entity.ShortURL{
+			{
+				UserID:      "user",
+				ShortCode:   "code",
+				OriginalURL: "https://test.com",
+			},
 		}
 
-		b.ResetTimer()
-		for i := 0; i < b.N; i++ {
-			key := string(rune('a' + i%26))
-			storage.Get(key)
-		}
+		err = storage.BatchSave(ctx, batch)
+		assert.Error(t, err)
+		assert.Equal(t, context.Canceled, err)
 	})
+}
+
+func TestCachedFileStorage_ConcurrentAccess(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "test_concurrent_*.json")
+	require.NoError(t, err)
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	storage, err := NewCachedFileStorage(tmpFile.Name())
+	require.NoError(t, err)
+
+	// Количество горутин
+	numGoroutines := 10
+	operationsPerGoroutine := 10
+
+	done := make(chan bool, numGoroutines)
+
+	for i := 0; i < numGoroutines; i++ {
+		go func(userID string) {
+			for j := 0; j < operationsPerGoroutine; j++ {
+				shortCode := userID + "_" + string(rune('a'+j))
+				originalURL := "https://" + userID + "-" + string(rune('a'+j)) + ".com"
+
+				// Сохраняем
+				err := storage.Save(userID, "corr", shortCode, originalURL)
+				assert.NoError(t, err)
+
+				// Получаем
+				record, found, err := storage.Get(shortCode)
+				assert.NoError(t, err)
+				assert.True(t, found)
+				assert.Equal(t, originalURL, record.OriginalURL)
+
+				// Ищем по пользователю
+				records, err := storage.FindByUserID(userID)
+				assert.NoError(t, err)
+				assert.Greater(t, len(records), 0)
+			}
+			done <- true
+		}("user" + string(rune('0'+i)))
+	}
+
+	// Ждем завершения всех горутин
+	for i := 0; i < numGoroutines; i++ {
+		<-done
+	}
+
+	// Проверяем итоговое состояние
+	stats := storage.Stats()
+	assert.Greater(t, stats["total_records"], 0)
+	assert.Greater(t, stats["active_records"], 0)
+}
+
+func TestCachedFileStorage_Reopen(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "test_reopen_*.json")
+	require.NoError(t, err)
+	tmpFile.Close()
+	defer os.Remove(tmpFile.Name())
+
+	// Создаем первое хранилище и сохраняем данные
+	storage1, err := NewCachedFileStorage(tmpFile.Name())
+	require.NoError(t, err)
+
+	err = storage1.Save("user1", "corr1", "code1", "https://example1.com")
+	assert.NoError(t, err)
+	err = storage1.Save("user1", "corr2", "code2", "https://example2.com")
+	assert.NoError(t, err)
+
+	// Удаляем одну запись
+	err = storage1.Delete("code1")
+	assert.NoError(t, err)
+
+	// Создаем второе хранилище с тем же файлом
+	storage2, err := NewCachedFileStorage(tmpFile.Name())
+	require.NoError(t, err)
+
+	// Проверяем, что данные сохранились после переоткрытия
+	record1, found, err := storage2.Get("code1")
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.False(t, record1.IsActive) // Должна быть неактивной
+
+	record2, found, err := storage2.Get("code2")
+	assert.NoError(t, err)
+	assert.True(t, found)
+	assert.True(t, record2.IsActive) // Должна быть активной
+
+	// Проверяем поиск по пользователю (только активные)
+	records, err := storage2.FindByUserID("user1")
+	assert.NoError(t, err)
+	assert.Len(t, records, 1)
+	assert.Equal(t, "code2", records[0].ShortCode)
 }

@@ -106,12 +106,7 @@ func (uc *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortU
 			return nil, fmt.Errorf("short URL with code '%s' not found", shortCode)
 		}
 
-		return &entity.ShortURL{
-			ID:          resp.UUID,
-			OriginalURL: resp.OriginalURL,
-			ShortCode:   shortCode,
-			IsActive:    !resp.Deleted,
-		}, nil
+		return resp, nil
 	}
 
 	// Используем основное хранилище (базу данных)
@@ -125,7 +120,7 @@ func (uc *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortU
 
 // GetByUserID возвращает список коротких url по id пользователя
 func (uc *urlUseCase) GetByUserID(ctx context.Context, userID string) ([]entity.ShortURL, error) {
-	var list []entity.ShortURL
+
 	if !uc.isDatabaseAvailable(ctx) {
 		// Используем файловое хранилище как fallback
 		resp, err := uc.fileStorage.FindByUserID(userID)
@@ -133,16 +128,7 @@ func (uc *urlUseCase) GetByUserID(ctx context.Context, userID string) ([]entity.
 			return nil, fmt.Errorf("get from file storage: %w", err)
 		}
 
-		for _, url := range resp {
-			list = append(list, entity.ShortURL{
-				ID:          url.UUID,
-				OriginalURL: url.OriginalURL,
-				ShortCode:   url.ShortURL,
-				IsActive:    !url.Deleted,
-			})
-		}
-
-		return list, nil
+		return resp, nil
 	}
 
 	// Используем основное хранилище (базу данных)
