@@ -129,6 +129,7 @@ func (r *storageRepository) initQueries() {
 			original_url, 
 			short_code, 
 			created_at,
+			is_active,
 			expires_at
 		FROM %s 
 		WHERE short_code = $1`,
@@ -149,6 +150,7 @@ func (r *storageRepository) initQueries() {
 			original_url, 
 			short_code, 
 			created_at,
+			is_active,
 			expires_at
 		FROM %s 
 		WHERE user_id = $1`,
@@ -400,6 +402,7 @@ func (r *storageRepository) Get(ctx context.Context, shortCode string) (*entity.
 		&shortURL.OriginalURL,
 		&shortURL.ShortCode,
 		&shortURL.CreatedAt,
+		&shortURL.IsActive,
 		&expiresAt,
 	)
 	if err != nil {
@@ -453,6 +456,7 @@ func (r *storageRepository) GetByUserID(ctx context.Context, userID string) ([]e
 			&shortURL.OriginalURL,
 			&shortURL.ShortCode,
 			&shortURL.CreatedAt,
+			&shortURL.IsActive,
 			&expiresAt,
 		)
 		if errScan != nil {
