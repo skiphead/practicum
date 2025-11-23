@@ -11,9 +11,3 @@ type RepositoryConfig struct {
 }
 
 type RepositoryOption func(*storageRepository)
-
-func WithTableName(tableName string) RepositoryOption {
-	return func(r *storageRepository) {
-		r.table = tableName
-	}
-}
