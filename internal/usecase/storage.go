@@ -12,6 +12,8 @@ import (
 
 const batchSize = 100
 
+var ErrDuplicateURL = fmt.Errorf("duplicate URL")
+
 type URLUseCase interface {
 	Ping(ctx context.Context) error
 	IsDuplicateError(err error) bool
