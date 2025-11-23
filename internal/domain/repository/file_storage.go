@@ -273,7 +273,7 @@ func (s *cachedFileStorage) GetByID(id string) (*URLRecord, bool, error) {
 	defer s.mu.RUnlock()
 
 	record, exists := s.cacheByID[id]
-	if !exists || record.Deleted {
+	if !exists {
 		return nil, false, nil
 	}
 	return record, true, nil
