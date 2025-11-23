@@ -103,7 +103,7 @@ func (uc *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortU
 			return nil, fmt.Errorf("get from file storage: %w", err)
 		}
 		if !exists {
-			return nil, fmt.Errorf("short URL with code '%uc' not found", shortCode)
+			return nil, fmt.Errorf("short URL with code '%s' not found", shortCode)
 		}
 
 		return &entity.ShortURL{
