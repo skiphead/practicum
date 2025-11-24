@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"gopkg.in/yaml.v3"
-	"log"
 	"os"
 )
 
@@ -43,7 +42,6 @@ func LoadConfig(configPath string) (*Config, error) {
 		config.ServerAddr = env
 	}
 	if env := os.Getenv("DATABASE_DSN"); env != "" {
-		log.Println(env)
 		config.DatabaseDSN = env
 	}
 	if env := os.Getenv("FILE_STORAGE_PATH"); env != "" {

@@ -27,7 +27,7 @@ func TestStorageConstructor(t *testing.T) {
 	}
 
 	// Проверяем что можем вызывать все методы интерфейса
-	err = storage.Save("", "test", "https://test.com")
+	err = storage.Save("user_id", "", "test", "https://test.com")
 	if err != nil {
 		t.Errorf("Save method failed: %v", err)
 	}

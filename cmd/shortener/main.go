@@ -31,6 +31,7 @@ import (
 // 4. Обработчики HTTP-запросов
 // 5. HTTP-сервер
 func main() {
+
 	// Инициализация логгера
 	logger, err := zap.NewProduction()
 	if err != nil {
@@ -54,7 +55,8 @@ func main() {
 	handler := handlers.NewURLHandler(
 		usecase.NewStorageUseCase(cfg.BaseURL, *store, *storageRepo),
 		cfg.ServerAddr,
-		cfg.BaseURL)
+		cfg.BaseURL,
+		cfg.SessionKey)
 
 	// Инициализация сервера
 	server := initServer(cfg, handler)

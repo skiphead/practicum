@@ -10,6 +10,7 @@ type Config struct {
 	BaseURL         string `yaml:"base_url"`
 	FileStoragePath string `yaml:"file_storage_path"`
 	DatabaseDSN     string `yaml:"database_dsn"`
+	SessionKey      string `yaml:"session_key"`
 }
 
 func NewDefaultConfig() *Config {
