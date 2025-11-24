@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"net/http"
-	"os"
 	"time"
 )
 
@@ -43,7 +42,7 @@ func (h *URLHandler) sessionMiddleware(next http.Handler) http.Handler {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
-			return []byte(os.Getenv("SESSION_KEY")), nil
+			return []byte(h.sessionKey), nil
 		})
 
 		if err != nil || !token.Valid {
@@ -80,7 +79,7 @@ func (h *URLHandler) createNewSession(w http.ResponseWriter) string {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString([]byte(os.Getenv("SESSION_KEY")))
+	tokenString, err := token.SignedString([]byte(h.sessionKey))
 	if err != nil {
 		zap.L().Error("Failed to create JWT token", zap.Error(err))
 		return userID

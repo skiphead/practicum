@@ -3,8 +3,6 @@ package entity
 import (
 	"database/sql"
 	"errors"
-	"github.com/golang-jwt/jwt/v4"
-	"github.com/google/uuid"
 	"net/url"
 	"time"
 )
@@ -17,11 +15,6 @@ var (
 	ErrEmptyShortCode   = errors.New("short_code не может быть пустым")
 	ErrInvalidExpiry    = errors.New("expires_at не может быть раньше created_at")
 )
-
-type Claims struct {
-	jwt.RegisteredClaims
-	UserID uuid.UUID
-}
 
 type ShortenRequest struct {
 	URL string `json:"url"`

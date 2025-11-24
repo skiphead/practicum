@@ -47,11 +47,6 @@ func main() {
 	// Загрузка конфигурации
 	cfg := loadConfig()
 
-	err = os.Setenv("SESSION_KEY", cfg.SessionKey)
-	if err != nil {
-		zap.L().Error("Error setting SESSION_KEY", zap.Error(err))
-	}
-
 	// Инициализация хранилищ
 	store := initFileStorage(cfg)
 	storageRepo := initDatabase(cfg)
@@ -60,7 +55,8 @@ func main() {
 	handler := handlers.NewURLHandler(
 		usecase.NewStorageUseCase(cfg.BaseURL, *store, *storageRepo),
 		cfg.ServerAddr,
-		cfg.BaseURL)
+		cfg.BaseURL,
+		cfg.SessionKey)
 
 	// Инициализация сервера
 	server := initServer(cfg, handler)
