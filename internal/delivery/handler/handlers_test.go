@@ -63,7 +63,7 @@ func (m *MockURLUseCase) IsDuplicateError(err error) bool {
 // Test helpers
 func setupTestHandler() (*URLHandler, *MockURLUseCase) {
 	mockStorage := new(MockURLUseCase)
-	handler := NewURLHandler(mockStorage, "localhost:8080", "http://localhost:8080")
+	handler := NewURLHandler(mockStorage, "localhost:8080", "http://localhost:8080", "secret")
 	return handler, mockStorage
 }
 
