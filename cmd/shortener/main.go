@@ -6,7 +6,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -51,16 +50,7 @@ func main() {
 	// Загрузка конфигурации
 	cfg := loadConfig()
 
-	// Инициализация аудита
-	fmt.Println(cfg.AuditURL)
 	auditClient := initAudit(cfg)
-	event := auditClient.LogEvent(context.Background(), &audit.Event{
-		Timestamp: time.Now().Unix(),
-		Action:    "test",
-		UserID:    "test",
-		URL:       "localhost",
-	})
-	fmt.Println("Test event", event)
 
 	// Инициализация хранилищ
 	store := initFileStorage(cfg)

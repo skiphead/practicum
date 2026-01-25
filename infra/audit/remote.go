@@ -153,17 +153,6 @@ func (s *Service) executeWithRetry(ctx context.Context, operation func() error, 
 
 	attempt := 0
 	for {
-		// Проверяем, не отменен ли контекст перед каждой попыткой
-		select {
-		case <-ctx.Done():
-			if lastErr != nil {
-				return fmt.Errorf("context cancelled after error: %w (context error: %v)", lastErr, ctx.Err())
-			}
-			return ctx.Err()
-		default:
-			// Контекст не отменен, продолжаем выполнение
-		}
-
 		// Выполняем операцию
 		err := operation()
 
@@ -196,6 +185,17 @@ func (s *Service) executeWithRetry(ctx context.Context, operation func() error, 
 				return ctx.Err()
 			case <-timer.C:
 				// Продолжаем цикл
+			}
+		} else {
+			// Если задержка равна 0, проверяем, не отменен ли контекст
+			select {
+			case <-ctx.Done():
+				if lastErr != nil {
+					return fmt.Errorf("context cancelled after error: %w (context error: %v)", lastErr, ctx.Err())
+				}
+				return ctx.Err()
+			default:
+				// Контекст не отменен, продолжаем цикл
 			}
 		}
 	}
