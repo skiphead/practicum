@@ -63,31 +63,31 @@ func (c Config) Validate() error {
 	}
 
 	if c.Timeout <= 0 {
-		return fmt.Errorf("Timeout must be positive")
+		return fmt.Errorf("validete error timeout must be positive")
 	}
 
 	if c.MaxRetries < 0 {
-		return fmt.Errorf("MaxRetries cannot be negative")
+		return fmt.Errorf("validete error MaxRetries cannot be negative")
 	}
 
 	if c.RetryDelay < 0 {
-		return fmt.Errorf("RetryDelay cannot be negative")
+		return fmt.Errorf("validete error RetryDelay cannot be negative")
 	}
 
 	if c.UserAgent == "" {
-		return fmt.Errorf("UserAgent cannot be empty")
+		return fmt.Errorf("validete error UserAgent cannot be empty")
 	}
 
 	if c.MaxResponseSize <= 0 {
-		return fmt.Errorf("MaxResponseSize must be positive")
+		return fmt.Errorf("validete error MaxResponseSize must be positive")
 	}
 
 	if c.MaxResponseSize > 100*1024*1024 { // 100 MB
-		return fmt.Errorf("MaxResponseSize is too large")
+		return fmt.Errorf("validete error MaxResponseSize is too large")
 	}
 
 	if c.MaxBatchSize <= 0 {
-		return fmt.Errorf("MaxBatchSize must be positive")
+		return fmt.Errorf("validete error MaxBatchSize must be positive")
 	}
 
 	return nil
