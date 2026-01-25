@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"fmt"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/skiphead/practicum/infra/client/postgresql"
@@ -15,14 +16,15 @@ import (
 	"github.com/skiphead/practicum/internal/delivery"
 	handler "github.com/skiphead/practicum/internal/delivery/handler"
 
-	"github.com/skiphead/practicum/internal/domain/repository"
-	"github.com/skiphead/practicum/internal/usecase"
-	"go.uber.org/zap"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/skiphead/practicum/internal/domain/repository"
+	"github.com/skiphead/practicum/internal/usecase"
+	"go.uber.org/zap"
 )
 
 // main - точка входа в приложение.

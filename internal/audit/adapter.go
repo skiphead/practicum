@@ -3,10 +3,11 @@ package audit
 import (
 	"context"
 	"fmt"
-	"github.com/skiphead/practicum/infra/audit"
-	"github.com/skiphead/practicum/pkg/transport/httpclient"
 	"sync"
 	"time"
+
+	"github.com/skiphead/practicum/infra/audit"
+	"github.com/skiphead/practicum/pkg/transport/httpclient"
 )
 
 // Config конфигурация адаптера
@@ -31,9 +32,8 @@ func DefaultConfig() Config {
 
 // Validate проверяет корректность конфигурации
 func (c Config) Validate() error {
-	if c.FilePath == "" && c.HTTPEndpoint == "" {
-		return fmt.Errorf("at least one of FilePath or HTTPEndpoint must be set")
-	}
+	// Убираем проверку на наличие хотя бы одного приемника
+	// Если оба пустые, адаптер будет работать в "no-op" режиме
 
 	if c.MaxBatchSize <= 0 {
 		return fmt.Errorf("MaxBatchSize must be positive")
@@ -73,7 +73,7 @@ func NewAdapter(cfg Config) (*Adapter, error) {
 
 	var err error
 
-	// Инициализируем файловый логгер
+	// Инициализируем файловый логгер только если указан путь
 	if cfg.FilePath != "" {
 		adapter.fileLogger, err = audit.GetInstance(cfg.FilePath)
 		if err != nil {
@@ -81,7 +81,7 @@ func NewAdapter(cfg Config) (*Adapter, error) {
 		}
 	}
 
-	// Инициализируем HTTP клиент
+	// Инициализируем HTTP клиент только если указан endpoint
 	if cfg.HTTPEndpoint != "" {
 		httpCfg := httpclient.DefaultConfig()
 		httpCfg.BaseURL = cfg.HTTPEndpoint
@@ -98,9 +98,14 @@ func NewAdapter(cfg Config) (*Adapter, error) {
 		})
 	}
 
-	// Запускаем обработчик очереди
-	if cfg.Enabled {
+	// Запускаем обработчик очереди, если аудит включен
+	// и есть хотя бы один приемник
+	if cfg.Enabled && (cfg.FilePath != "" || cfg.HTTPEndpoint != "") {
 		adapter.startProcessor()
+	} else if cfg.Enabled {
+		// Если включен, но приемники не настроены, логируем это
+		// но не создаем очередь и процессор
+		adapter.enabled = false
 	}
 
 	return adapter, nil
@@ -132,27 +137,57 @@ func (a *Adapter) startProcessor() {
 	go func() {
 		defer a.wg.Done()
 
-		batch := make([]*audit.CreateAuditRequest, 0, a.config.MaxBatchSize)
-		batchTimer := time.NewTimer(1 * time.Second)
+		// Если нет HTTP клиента, не создаем батчи
+		if a.httpClient == nil {
+			a.processWithoutBatching()
+			return
+		}
 
-		defer batchTimer.Stop()
+		// Обработка с батчингом для HTTP
+		a.processWithBatching()
+	}()
+}
 
-		for {
-			select {
-			case <-a.done:
-				// Отправляем оставшиеся события перед завершением
-				a.flushBatch(batch)
-				return
+// processWithoutBatching обрабатывает события без батчинга
+func (a *Adapter) processWithoutBatching() {
+	for {
+		select {
+		case <-a.done:
+			return
 
-			case event := <-a.queue:
-				// Добавляем событие в батч
+		case event := <-a.queue:
+			// Отправляем только в файл
+			if err := a.logToFile(event); err != nil {
+				// Логируем ошибку, но продолжаем
+			}
+		}
+	}
+}
+
+// processWithBatching обрабатывает события с батчингом для HTTP
+func (a *Adapter) processWithBatching() {
+	batch := make([]*audit.CreateAuditRequest, 0, a.config.MaxBatchSize)
+	batchTimer := time.NewTimer(1 * time.Second)
+
+	defer batchTimer.Stop()
+
+	for {
+		select {
+		case <-a.done:
+			// Отправляем оставшиеся события перед завершением
+			a.flushBatch(batch)
+			return
+
+		case event := <-a.queue:
+			// Отправляем в файл (синхронно)
+			if err := a.logToFile(event); err != nil {
+				// Логируем ошибку, но продолжаем
+			}
+
+			// Добавляем в батч для HTTP
+			if a.httpClient != nil {
 				req := a.convertToAuditRequest(event)
 				batch = append(batch, req)
-
-				// Отправляем в файл (синхронно)
-				if err := a.logToFile(event); err != nil {
-					// Логируем ошибку, но продолжаем
-				}
 
 				// Если батч достиг максимального размера, отправляем
 				if len(batch) >= a.config.MaxBatchSize {
@@ -160,17 +195,17 @@ func (a *Adapter) startProcessor() {
 					batch = batch[:0]
 					batchTimer.Reset(1 * time.Second)
 				}
-
-			case <-batchTimer.C:
-				// Отправляем накопленные события по таймеру
-				if len(batch) > 0 {
-					a.flushBatchHTTP(batch)
-					batch = batch[:0]
-				}
-				batchTimer.Reset(1 * time.Second)
 			}
+
+		case <-batchTimer.C:
+			// Отправляем накопленные события по таймеру
+			if len(batch) > 0 {
+				a.flushBatchHTTP(batch)
+				batch = batch[:0]
+			}
+			batchTimer.Reset(1 * time.Second)
 		}
-	}()
+	}
 }
 
 // flushBatch отправляет батч событий
@@ -231,7 +266,10 @@ func (a *Adapter) Enable() {
 
 	if !a.enabled {
 		a.enabled = true
-		a.startProcessor()
+		// Запускаем процессор только если есть приемники
+		if a.config.FilePath != "" || a.config.HTTPEndpoint != "" {
+			a.startProcessor()
+		}
 	}
 }
 
