@@ -249,13 +249,12 @@ func (a *Adapter) logToFile(event *Event) error {
 	}
 }
 
-// convertToAuditRequest конвертирует событие в формат аудит-модуля
 func (a *Adapter) convertToAuditRequest(event *Event) *audit.CreateAuditRequest {
 	return &audit.CreateAuditRequest{
-		Ts:     int(event.Timestamp),
+		TS:     int(event.Timestamp),
 		Action: event.Action,
-		UserId: event.UserID,
-		Url:    event.URL,
+		UserID: event.UserID,
+		URL:    event.URL,
 	}
 }
 
