@@ -8,6 +8,7 @@ import (
 
 	"github.com/skiphead/practicum/infra/audit"
 	"github.com/skiphead/practicum/pkg/transport/httpclient"
+	"go.uber.org/zap"
 )
 
 // Config конфигурация адаптера
@@ -182,6 +183,7 @@ func (a *Adapter) processWithBatching() {
 			// Отправляем в файл (синхронно)
 			if err := a.logToFile(event); err != nil {
 				// Логируем ошибку, но продолжаем
+				zap.L().Error("Ошибка записи в файл: %v", zap.Error(err))
 			}
 
 			// Добавляем в батч для HTTP
@@ -193,6 +195,11 @@ func (a *Adapter) processWithBatching() {
 				if len(batch) >= a.config.MaxBatchSize {
 					a.flushBatchHTTP(batch)
 					batch = batch[:0]
+
+					// Останавливаем и сбрасываем таймер
+					if !batchTimer.Stop() {
+						<-batchTimer.C
+					}
 					batchTimer.Reset(1 * time.Second)
 				}
 			}
