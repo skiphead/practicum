@@ -3,13 +3,14 @@ package audit
 import (
 	"context"
 	"fmt"
-	"github.com/skiphead/practicum/pkg/transport/httpclient"
 	"net/url"
 	"time"
+
+	"github.com/skiphead/practicum/pkg/transport/httpclient"
 )
 
-// AuditClient Интерфейс клиента для упрощения тестирования
-type AuditClient interface {
+// Client Интерфейс клиента для упрощения тестирования
+type Client interface {
 	CreateAuditEvent(ctx context.Context, req *CreateAuditRequest) error
 	CreateAuditEventWithRetry(ctx context.Context, req *CreateAuditRequest, retryOpts ...httpclient.RetryOption) error
 	BatchCreateAuditEvents(ctx context.Context, events []*CreateAuditRequest) error

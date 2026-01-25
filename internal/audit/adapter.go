@@ -49,7 +49,7 @@ func (c Config) Validate() error {
 // Adapter адаптирует события для отправки в разные приемники
 type Adapter struct {
 	fileLogger *audit.Logger
-	httpClient audit.AuditClient
+	httpClient audit.Client
 	config     Config
 	enabled    bool
 	mutex      sync.RWMutex
