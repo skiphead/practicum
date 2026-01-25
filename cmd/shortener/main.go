@@ -6,12 +6,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/skiphead/practicum/infra/client/postgresql"
 	"github.com/skiphead/practicum/infra/config"
+	"github.com/skiphead/practicum/internal/audit"
 	"github.com/skiphead/practicum/internal/delivery"
-	"github.com/skiphead/practicum/internal/delivery/handler"
+	handler "github.com/skiphead/practicum/internal/delivery/handler"
+
 	"github.com/skiphead/practicum/internal/domain/repository"
 	"github.com/skiphead/practicum/internal/usecase"
 	"go.uber.org/zap"
@@ -31,7 +34,6 @@ import (
 // 4. Обработчики HTTP-запросов
 // 5. HTTP-сервер
 func main() {
-
 	// Инициализация логгера
 	logger, err := zap.NewProduction()
 	if err != nil {
@@ -47,19 +49,31 @@ func main() {
 	// Загрузка конфигурации
 	cfg := loadConfig()
 
+	// Инициализация аудита
+	fmt.Println(cfg.AuditURL)
+	auditClient := initAudit(cfg)
+	event := auditClient.LogEvent(context.Background(), &audit.Event{
+		Timestamp: time.Now().Unix(),
+		Action:    "test",
+		UserID:    "test",
+		URL:       "localhost",
+	})
+	fmt.Println("Test event", event)
+
 	// Инициализация хранилищ
 	store := initFileStorage(cfg)
 	storageRepo := initDatabase(cfg)
 
 	// Создание обработчика URL
-	handler := handlers.NewURLHandler(
+	h := handler.NewURLHandler(
 		usecase.NewStorageUseCase(cfg.BaseURL, *store, *storageRepo),
 		cfg.ServerAddr,
 		cfg.BaseURL,
-		cfg.SessionKey)
+		cfg.SessionKey,
+		auditClient)
 
 	// Инициализация сервера
-	server := initServer(cfg, handler)
+	server := initServer(cfg, h)
 
 	// Запуск сервера
 	runServer(server)
@@ -147,7 +161,7 @@ func initDatabase(cfg *config.Config) *repository.URLRepository {
 // Возвращает:
 //   - сконфигурированный экземпляр сервера
 //   - завершает приложение при ошибке создания сервера
-func initServer(cfg *config.Config, handler *handlers.URLHandler) *delivery.Server {
+func initServer(cfg *config.Config, handler *handler.URLHandler) *delivery.Server {
 	srv, err := delivery.NewServerChi(cfg, handler.ChiMux())
 	if err != nil {
 		zap.L().Fatal("Server creation failed", zap.Error(err))
@@ -177,4 +191,61 @@ func loadConfig() *config.Config {
 		zap.L().Fatal("Configuration validation failed", zap.Error(err))
 	}
 	return cfg
+}
+
+func initAudit(cfg *config.Config) *audit.Adapter {
+
+	auditCfg := audit.Config{
+		FilePath:     cfg.AuditFile,
+		HTTPEndpoint: cfg.AuditURL,
+		Enabled:      true,
+		MaxBatchSize: 10000,
+		QueueSize:    10,
+	}
+
+	adapter, err := audit.NewAdapter(auditCfg)
+	if err != nil {
+		zap.L().Fatal("Failed to create audit adapter", zap.Error(err))
+	}
+
+	zap.L().Info("Audit system initialized",
+		zap.String("file_path", cfg.AuditFile),
+		zap.String("http_endpoint", cfg.AuditURL),
+	)
+
+	return adapter
+	/*
+		defer service.Close()
+
+		ctx := context.Background()
+
+		// Симуляция работы приложения
+		urls := []string{
+			"https://google.com/search?q=golang",
+			"https://github.com/golang/go",
+			"https://stackoverflow.com/questions/tagged/go",
+		}
+
+		users := []string{"alice", "bob", "charlie"}
+
+		for i := 0; i < 10; i++ {
+			user := users[i%len(users)]
+			url := urls[i%len(urls)]
+
+			// Случайное действие
+			if i%2 == 0 {
+				err = service.LogShorten(ctx, user, url)
+			} else {
+				err = service.LogFollow(ctx, user, url)
+			}
+
+			if err != nil {
+				log.Printf("Combined audit error: %v", err)
+			}
+
+			time.Sleep(50 * time.Millisecond)
+		}
+
+	*/
+
 }

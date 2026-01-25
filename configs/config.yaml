@@ -1,2 +1,2 @@
-#server_addr: localhost:8080
+server_addr: localhost:8082
 session_key: super_secret

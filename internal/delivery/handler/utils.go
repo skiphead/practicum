@@ -1,4 +1,4 @@
-package handlers
+package handler
 
 import (
 	"context"
@@ -59,7 +59,7 @@ func (h *URLHandler) validateURL(originalURL string, w http.ResponseWriter) erro
 	}
 
 	u, err := url.Parse(originalURL)
-	if err != nil || u.Scheme == "" || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+	if err != nil || u.Scheme == "" || u.Host == "" || (u.Scheme != "httpclient" && u.Scheme != "https") {
 		http.Error(w, "Invalid URL", http.StatusBadRequest)
 		return fmt.Errorf("invalid URL scheme or host")
 	}

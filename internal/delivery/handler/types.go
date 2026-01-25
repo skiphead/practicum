@@ -1,19 +1,26 @@
-package handlers
+package handler
 
-import "github.com/skiphead/practicum/internal/usecase"
+import (
+	"github.com/skiphead/practicum/internal/audit"
+	"github.com/skiphead/practicum/internal/middleware"
+	"github.com/skiphead/practicum/internal/usecase"
+)
 
 type URLHandler struct {
-	storage    usecase.URLUseCase
-	serverAddr string
-	baseURL    string
-	sessionKey string
+	storage         usecase.URLUseCase
+	auditMiddleware middleware.AuditMiddleware
+	auditClient     *audit.Adapter
+	serverAddr      string
+	baseURL         string
+	sessionKey      string
 }
 
-func NewURLHandler(storage usecase.URLUseCase, serverAddr, baseURL, sessionKey string) *URLHandler {
+func NewURLHandler(storage usecase.URLUseCase, serverAddr, baseURL, sessionKey string, auditClient *audit.Adapter) *URLHandler {
 	return &URLHandler{
-		storage:    storage,
-		serverAddr: serverAddr,
-		baseURL:    baseURL,
-		sessionKey: sessionKey,
+		storage:     storage,
+		serverAddr:  serverAddr,
+		baseURL:     baseURL,
+		sessionKey:  sessionKey,
+		auditClient: auditClient,
 	}
 }

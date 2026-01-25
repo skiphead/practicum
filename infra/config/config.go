@@ -11,6 +11,8 @@ type Config struct {
 	FileStoragePath string `yaml:"file_storage_path"`
 	DatabaseDSN     string `yaml:"database_dsn"`
 	SessionKey      string `yaml:"session_key"`
+	AuditFile       string `yaml:"audit_file"`
+	AuditURL        string `yaml:"audit_url"`
 }
 
 func NewDefaultConfig() *Config {

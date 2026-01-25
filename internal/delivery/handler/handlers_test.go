@@ -1,8 +1,9 @@
-package handlers
+package handler
 
 import (
 	"bytes"
 	"context"
+	"github.com/skiphead/practicum/internal/audit"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/stretchr/testify/mock"
 	"net/http"
@@ -63,7 +64,7 @@ func (m *MockURLUseCase) IsDuplicateError(err error) bool {
 // Test helpers
 func setupTestHandler() (*URLHandler, *MockURLUseCase) {
 	mockStorage := new(MockURLUseCase)
-	handler := NewURLHandler(mockStorage, "localhost:8080", "http://localhost:8080", "secret")
+	handler := NewURLHandler(mockStorage, "localhost:8080", "http://localhost:8080", "secret", &audit.Adapter{})
 	return handler, mockStorage
 }
 
