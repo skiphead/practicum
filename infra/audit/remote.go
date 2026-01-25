@@ -36,10 +36,10 @@ func DefaultServiceConfig() ServiceConfig {
 
 // CreateAuditRequest структура запроса для создания аудит-события
 type CreateAuditRequest struct {
-	Ts     int    `json:"ts"`
+	TS     int    `json:"ts"`
 	Action string `json:"action"`
-	UserId string `json:"user_id"`
-	Url    string `json:"url"`
+	UserID string `json:"user_id"`
+	URL    string `json:"url"`
 }
 
 // NewService создает новый сервис аудита
@@ -104,7 +104,7 @@ func (s *Service) validateAuditRequest(req *CreateAuditRequest) error {
 		return fmt.Errorf("request cannot be nil")
 	}
 
-	if req.Ts <= 0 {
+	if req.TS <= 0 {
 		return fmt.Errorf("timestamp must be positive")
 	}
 
@@ -116,24 +116,24 @@ func (s *Service) validateAuditRequest(req *CreateAuditRequest) error {
 		return fmt.Errorf("action too long, max 100 characters")
 	}
 
-	if req.UserId == "" {
+	if req.UserID == "" {
 		return fmt.Errorf("user_id cannot be empty")
 	}
 
-	if len(req.UserId) > 100 {
+	if len(req.UserID) > 100 {
 		return fmt.Errorf("user_id too long, max 100 characters")
 	}
 
-	if req.Url == "" {
+	if req.URL == "" {
 		return fmt.Errorf("url cannot be empty")
 	}
 
-	if len(req.Url) > 2000 {
+	if len(req.URL) > 2000 {
 		return fmt.Errorf("url too long, max 2000 characters")
 	}
 
 	// Проверяем, что URL валидный
-	if _, err := url.Parse(req.Url); err != nil {
+	if _, err := url.Parse(req.URL); err != nil {
 		return fmt.Errorf("invalid URL: %w", err)
 	}
 
@@ -154,11 +154,14 @@ func (s *Service) executeWithRetry(ctx context.Context, operation func() error, 
 	attempt := 0
 	for {
 		// Проверяем, не отменен ли контекст перед каждой попыткой
-		if err := ctx.Err(); err != nil {
+		select {
+		case <-ctx.Done():
 			if lastErr != nil {
-				return lastErr
+				return fmt.Errorf("context cancelled after error: %w (context error: %v)", lastErr, ctx.Err())
 			}
-			return err
+			return ctx.Err()
+		default:
+			// Контекст не отменен, продолжаем выполнение
 		}
 
 		// Выполняем операцию
@@ -188,7 +191,7 @@ func (s *Service) executeWithRetry(ctx context.Context, operation func() error, 
 			case <-ctx.Done():
 				timer.Stop()
 				if lastErr != nil {
-					return lastErr
+					return fmt.Errorf("context cancelled after error: %w (context error: %v)", lastErr, ctx.Err())
 				}
 				return ctx.Err()
 			case <-timer.C:
