@@ -140,7 +140,6 @@ func (s *Service) validateAuditRequest(req *CreateAuditRequest) error {
 	return nil
 }
 
-// executeWithRetry выполняет операцию с поддержкой повторных попыток
 func (s *Service) executeWithRetry(ctx context.Context, operation func() error, opts httpclient.RetryOptions) error {
 	var lastErr error
 
@@ -155,11 +154,9 @@ func (s *Service) executeWithRetry(ctx context.Context, operation func() error, 
 	for {
 		// Выполняем операцию
 		err := operation()
-
 		if err == nil {
-			break
+			return nil
 		}
-
 		// Сохраняем последнюю ошибку
 		lastErr = err
 
@@ -178,16 +175,10 @@ func (s *Service) executeWithRetry(ctx context.Context, operation func() error, 
 			select {
 			case <-ctx.Done():
 				timer.Stop()
-				// Возвращаем ошибку контекста с информацией о последней ошибке операции
-				if lastErr != nil {
-					return fmt.Errorf("operation failed: %w, context cancelled: %v", lastErr, ctx.Err())
-				}
-				return ctx.Err()
+				return fmt.Errorf("operation failed: %w, context cancelled: %v", lastErr, ctx.Err())
 			case <-timer.C:
 				// Продолжаем цикл
 			}
 		}
 	}
-
-	return nil
 }
