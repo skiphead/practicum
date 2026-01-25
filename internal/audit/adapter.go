@@ -160,6 +160,7 @@ func (a *Adapter) processWithoutBatching() {
 			// Отправляем только в файл
 			if err := a.logToFile(event); err != nil {
 				// Логируем ошибку, но продолжаем
+				zap.L().Error("failed to log audit event", zap.Error(err))
 			}
 		}
 	}
@@ -237,6 +238,7 @@ func (a *Adapter) flushBatchHTTP(batch []*audit.CreateAuditRequest) {
 	if err := a.httpClient.BatchCreateAuditEvents(ctx, batch); err != nil {
 		// Логируем ошибку, но не прерываем выполнение
 		// В продакшене можно реализовать dead letter queue
+		zap.L().Error("failed to batch audit event", zap.Error(err))
 	}
 }
 
