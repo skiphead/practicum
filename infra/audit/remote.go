@@ -156,9 +156,8 @@ func (s *Service) executeWithRetry(ctx context.Context, operation func() error, 
 		// Выполняем операцию
 		err := operation()
 
-		// Если операция успешна, возвращаем результат
 		if err == nil {
-			return nil
+			break
 		}
 
 		// Сохраняем последнюю ошибку
@@ -189,4 +188,6 @@ func (s *Service) executeWithRetry(ctx context.Context, operation func() error, 
 			}
 		}
 	}
+
+	return nil
 }
