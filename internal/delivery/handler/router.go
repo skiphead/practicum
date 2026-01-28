@@ -2,7 +2,6 @@ package handler
 
 import (
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 	mw "github.com/skiphead/practicum/internal/middleware"
 )
 
@@ -11,12 +10,9 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 	r := chi.NewRouter()
 
 	// Порядок middleware важен!
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Recoverer)
-	r.Use(mw.CompressionMiddleware) // Существующий middleware сжатия
-	r.Use(h.auditMiddleware.Wrap)   // Наш middleware аудита
-	r.Use(mw.LoggingMiddleware)     // Существующий middleware логирования
+	r.Use(mw.CompressionMiddleware)
+	r.Use(h.sessionMiddleware)
+	r.Use(mw.LoggingMiddleware)
 
 	// Маршруты (все покрыты аудитом через middleware)
 	r.Get("/{key}", h.redirectURL)                         // GET /{id} - переход по ссылке
