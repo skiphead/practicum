@@ -6,6 +6,7 @@ import (
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/internal/domain/repository"
 	"github.com/skiphead/practicum/pkg/utils"
+
 	"go.uber.org/zap"
 	"time"
 )
@@ -33,11 +34,14 @@ type urlUseCase struct {
 }
 
 // NewStorageUseCase создает новый экземпляр usecase для работы с хранилищем
-func NewStorageUseCase(baseURL string, fs repository.FileStorage, repo repository.URLRepository) URLUseCase {
+func NewStorageUseCase(baseURL string,
+	fileStorage repository.FileStorage,
+	urlRepository repository.URLRepository) URLUseCase {
+
 	return &urlUseCase{
 		baseURL:     baseURL,
-		fileStorage: fs,
-		storageRepo: repo,
+		fileStorage: fileStorage,
+		storageRepo: urlRepository,
 	}
 }
 

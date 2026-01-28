@@ -3,6 +3,7 @@ package delivery
 import (
 	"github.com/skiphead/practicum/infra/client/postgresql"
 	"github.com/skiphead/practicum/infra/config"
+	"github.com/skiphead/practicum/internal/audit"
 	handlers "github.com/skiphead/practicum/internal/delivery/handler"
 	"github.com/skiphead/practicum/internal/domain/repository"
 	"github.com/skiphead/practicum/internal/usecase"
@@ -19,7 +20,7 @@ func TestNewServer(t *testing.T) {
 
 	repoStorage := repository.NewStorageRepository(pool)
 	handler := handlers.NewURLHandler(usecase.NewStorageUseCase("http://localhost", memoryStorage,
-		repoStorage), cfg.ServerAddr, cfg.BaseURL, "")
+		repoStorage), cfg.ServerAddr, cfg.BaseURL, "", &audit.Adapter{})
 
 	server, err := NewServerChi(cfg, handler.ChiMux())
 	if err != nil {
@@ -38,7 +39,7 @@ func TestNewServer_InvalidConfig(t *testing.T) {
 
 	repoStorage := repository.NewStorageRepository(pool)
 	handler := handlers.NewURLHandler(usecase.NewStorageUseCase("http://localhost", memoryStorage,
-		repoStorage), cfg.ServerAddr, cfg.BaseURL, "")
+		repoStorage), cfg.ServerAddr, cfg.BaseURL, "", &audit.Adapter{})
 
 	_, err := NewServerChi(cfg, handler.ChiMux())
 	if err == nil {

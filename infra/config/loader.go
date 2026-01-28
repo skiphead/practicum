@@ -18,11 +18,14 @@ func LoadConfig(configPath string) (*Config, error) {
 		}
 	}
 
-	var flagServerAddr, flagBaseURL, flagFileStoragePath, flagDataBaseDSN string
+	var flagServerAddr, flagBaseURL, flagFileStoragePath, flagDataBaseDSN, flagAuditFile, flagAuditURL string
 	flag.StringVar(&flagServerAddr, "a", "", "Порт для запуска сервера")
 	flag.StringVar(&flagBaseURL, "b", "", "Базовый адрес результирующего сокращённого URL")
 	flag.StringVar(&flagDataBaseDSN, "d", "", "user=postgres password=secret host=localhost port=5432 database=pgx_test sslmode=disable")
 	flag.StringVar(&flagFileStoragePath, "f", "", "Путь до файла хранилища")
+	flag.StringVar(&flagAuditFile, "audit-file", "", "Путь к файлу-приёмнику, в который сохраняются логи аудита.")
+	flag.StringVar(&flagAuditURL, "audit-url", "", "Полный URL удаленного сервера-приёмника, куда отправляются логи аудита")
+
 	flag.Parse()
 
 	if flagServerAddr != "" {
@@ -33,6 +36,12 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 	if flagBaseURL != "" {
 		config.BaseURL = flagBaseURL
+	}
+	if flagAuditFile != "" {
+		config.AuditFile = flagAuditFile
+	}
+	if flagAuditURL != "" {
+		config.AuditURL = flagAuditURL
 	}
 
 	if env := os.Getenv("BASE_URL"); env != "" {
@@ -46,6 +55,12 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 	if env := os.Getenv("FILE_STORAGE_PATH"); env != "" {
 		config.FileStoragePath = env
+	}
+	if env := os.Getenv("AUDIT_FILE"); env != "" {
+		config.AuditFile = env
+	}
+	if env := os.Getenv("AUDIT_URL"); env != "" {
+		config.AuditURL = env
 	}
 
 	if config.DatabaseDSN == "" {

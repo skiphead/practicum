@@ -1,13 +1,15 @@
-package handlers
+package handler
 
 import (
 	"context"
 	"encoding/json"
-	"github.com/go-chi/render"
-	"github.com/skiphead/practicum/internal/domain/entity"
-	"go.uber.org/zap"
 	"net/http"
 	"time"
+
+	"github.com/go-chi/render"
+	"github.com/skiphead/practicum/internal/audit"
+	"github.com/skiphead/practicum/internal/domain/entity"
+	"go.uber.org/zap"
 )
 
 func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
@@ -42,13 +44,23 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	errAuditClient := h.auditClient.LogEvent(context.Background(), &audit.Event{
+		Timestamp: time.Now().Unix(),
+		Action:    "shorten",
+		UserID:    "",
+		URL:       original.URL,
+	})
+	if errAuditClient != nil {
+		render.Status(r, http.StatusInternalServerError)
+		return
+	}
+
 	w.WriteHeader(http.StatusCreated)
 	render.JSON(w, r, map[string]string{"result": shortURL})
 }
 
 func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-
 	body, err := h.readRequestBody(r)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -68,6 +80,17 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			zap.L().Error("write error", zap.Error(err))
 		}
+		return
+	}
+
+	errAuditClient := h.auditClient.LogEvent(context.Background(), &audit.Event{
+		Timestamp: time.Now().Unix(),
+		Action:    "shorten",
+		UserID:    "",
+		URL:       originalURL,
+	})
+	if errAuditClient != nil {
+		render.Status(r, http.StatusInternalServerError)
 		return
 	}
 
@@ -96,6 +119,17 @@ func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
 
 	if !data.IsActive {
 		w.WriteHeader(http.StatusGone)
+		return
+	}
+
+	errAuditClient := h.auditClient.LogEvent(context.Background(), &audit.Event{
+		Timestamp: time.Now().Unix(),
+		Action:    "follow",
+		UserID:    data.UserID,
+		URL:       data.OriginalURL,
+	})
+	if errAuditClient != nil {
+		render.Status(r, http.StatusInternalServerError)
 		return
 	}
 

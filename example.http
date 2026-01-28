@@ -1,0 +1,10 @@
+# curl --location 'http://localhost:8080/'
+#--header 'Content-Type: text/plain'
+#--header 'Cookie: session_token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3Njk2NzUxNDMsImlhdCI6MTc2OTU4ODc0MywidXNlcl9pZCI6Ijc0ZTJlZmM0LWJkZDgtNGEzNS04ZTNmLWEzMmRmNWQxM2RiMSJ9.VccpxlYPDBUvLDgnzRZ3-Ov75IujhVb_6JRT8e5azcU'
+#--data 'https://github.com/go-resty/ttaq13'
+POST http://localhost:8080/
+Content-Type: text/plain
+
+https://github.com/tet2
+
+###

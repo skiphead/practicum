@@ -2,15 +2,16 @@ package handlers
 
 import (
 	"compress/gzip"
-	"github.com/go-chi/chi/v5/middleware"
-	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"go.uber.org/zap"
 )
 
-func compressionMiddleware(next http.Handler) http.Handler {
+func CompressionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ow := w
 
@@ -44,7 +45,7 @@ func compressionMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func loggingMiddleware(next http.Handler) http.Handler {
+func LoggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 
@@ -72,13 +73,7 @@ func logResponse(ww middleware.WrapResponseWriter) {
 }
 
 func shouldCompressResponse(r *http.Request) bool {
-	if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-		return false
-	}
-
-	contentType := r.Header.Get("Content-Type")
-	return strings.HasPrefix(contentType, "text/plain") ||
-		contentType == "application/json"
+	return strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")
 }
 
 func shouldDecompressRequest(r *http.Request) bool {
