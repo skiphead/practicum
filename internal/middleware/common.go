@@ -13,35 +13,17 @@ import (
 
 func CompressionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ow := w
 
-		if shouldCompressResponse(r) {
+		// Проверяем, поддерживает ли клиент gzip
+		acceptsGzip := strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")
+
+		if acceptsGzip {
 			cw := newCompressWriter(w)
-			ow = cw
-			defer func(cw *compressWriter) {
-				errCw := cw.Close()
-				if errCw != nil {
-					zap.L().Error("error closing compress writer", zap.Error(errCw))
-				}
-			}(cw)
+			w = cw
+			defer cw.Close()
 		}
 
-		if shouldDecompressRequest(r) {
-			cr, err := newCompressReader(r.Body)
-			if err != nil {
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			r.Body = cr
-			defer func(cr *compressReader) {
-				errCr := cr.Close()
-				if errCr != nil {
-					zap.L().Error("error closing compress reader", zap.Error(errCr))
-				}
-			}(cr)
-		}
-
-		next.ServeHTTP(ow, r)
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -77,9 +59,7 @@ func shouldCompressResponse(r *http.Request) bool {
 		return false
 	}
 
-	contentType := r.Header.Get("Content-Type")
-	return strings.HasPrefix(contentType, "text/plain") ||
-		contentType == "application/json"
+	return true
 }
 
 func shouldDecompressRequest(r *http.Request) bool {

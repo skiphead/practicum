@@ -3,12 +3,14 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"strings"
+	"time"
+
 	"github.com/go-chi/render"
 	"github.com/skiphead/practicum/internal/audit"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"go.uber.org/zap"
-	"net/http"
-	"time"
 )
 
 func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
@@ -61,6 +63,12 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 
+	// Проверяем метод
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	body, err := h.readRequestBody(r)
 	if err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -68,6 +76,19 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	originalURL := string(body)
+
+	// Важно: проверяем, что URL не пустой
+	if originalURL == "" {
+		http.Error(w, "URL is required", http.StatusBadRequest)
+		return
+	}
+
+	// Простая проверка - есть ли протокол
+	if !strings.Contains(originalURL, "://") && !strings.HasPrefix(originalURL, "http") {
+		http.Error(w, "Invalid URL", http.StatusBadRequest)
+		return
+	}
+
 	shortURL, isConflict, err := h.processAndSaveURL(originalURL, w, r)
 	if err != nil {
 		return
