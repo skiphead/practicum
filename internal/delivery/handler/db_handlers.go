@@ -2,9 +2,10 @@ package handler
 
 import (
 	"context"
-	"go.uber.org/zap"
 	"net/http"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 func (h *URLHandler) pingDB(w http.ResponseWriter, r *http.Request) {

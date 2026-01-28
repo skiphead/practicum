@@ -24,6 +24,8 @@ import (
 	"github.com/skiphead/practicum/internal/domain/repository"
 	"github.com/skiphead/practicum/internal/usecase"
 	"go.uber.org/zap"
+
+	_ "net/http/pprof"
 )
 
 // main - точка входа в приложение.
