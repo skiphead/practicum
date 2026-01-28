@@ -17,11 +17,9 @@ func (m *MockServer) Start() error {
 
 	if m.ErrChan != nil {
 		go func() {
-			select {
-			case err := <-m.ErrChan:
-				if err != nil {
-					m.StartFunc = func() error { return err }
-				}
+			err := <-m.ErrChan
+			if err != nil {
+				m.StartFunc = func() error { return err }
 			}
 		}()
 	}
