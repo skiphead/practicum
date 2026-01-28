@@ -3,10 +3,13 @@ package delivery
 import (
 	"context"
 	"errors"
-	"github.com/go-chi/chi/v5"
-	"go.uber.org/zap"
 	"net/http"
 	"time"
+
+	"github.com/go-chi/chi/v5"
+	"go.uber.org/zap"
+
+	_ "net/http/pprof"
 
 	"github.com/skiphead/practicum/infra/config"
 )
@@ -32,7 +35,10 @@ func NewServerChi(cfg *config.Config, mux *chi.Mux) (*Server, error) {
 }
 
 func (s *Server) Start() <-chan error {
+	go http.ListenAndServe(":8081", nil)
+
 	serverError := make(chan error, 1)
+
 	go func() {
 		zap.L().Info("Starting server", zap.String("addr", s.Server.Addr))
 		if err := s.Server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

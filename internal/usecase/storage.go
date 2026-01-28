@@ -3,12 +3,14 @@ package usecase
 import (
 	"context"
 	"fmt"
+
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/internal/domain/repository"
 	"github.com/skiphead/practicum/pkg/utils"
 
-	"go.uber.org/zap"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 const batchSize = 100

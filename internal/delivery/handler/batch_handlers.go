@@ -3,11 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"net/http"
+	"time"
+
 	"github.com/go-chi/render"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"go.uber.org/zap"
-	"net/http"
-	"time"
 )
 
 func (h *URLHandler) createBatchShortAPIURL(w http.ResponseWriter, r *http.Request) {

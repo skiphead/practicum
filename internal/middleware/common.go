@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	_ "net/http/pprof"
+
 	"github.com/go-chi/chi/v5/middleware"
 	"go.uber.org/zap"
 )

@@ -3,11 +3,12 @@ package handler
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"time"
+
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"net/http"
-	"time"
 )
 
 const (

@@ -1,13 +1,14 @@
 package delivery
 
 import (
+	"testing"
+
 	"github.com/skiphead/practicum/infra/client/postgresql"
 	"github.com/skiphead/practicum/infra/config"
 	"github.com/skiphead/practicum/internal/audit"
 	handlers "github.com/skiphead/practicum/internal/delivery/handler"
 	"github.com/skiphead/practicum/internal/domain/repository"
 	"github.com/skiphead/practicum/internal/usecase"
-	"testing"
 )
 
 const serverAddr = `127.0.0.1:8080`
