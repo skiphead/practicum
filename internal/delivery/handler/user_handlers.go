@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/go-chi/render"
-	"github.com/skiphead/practicum/internal/domain/entity"
 	"net/http"
 	"time"
+
+	"github.com/go-chi/render"
+	"github.com/skiphead/practicum/internal/domain/entity"
 )
 
 func (h *URLHandler) getAPIUserUrls(w http.ResponseWriter, r *http.Request) {

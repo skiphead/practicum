@@ -3,8 +3,9 @@ package config
 import (
 	"flag"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"os"
+
+	"gopkg.in/yaml.v3"
 )
 
 const schema = "http"

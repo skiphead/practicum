@@ -3,9 +3,10 @@ package postgresql
 import (
 	"database/sql"
 	"fmt"
-	"github.com/pressly/goose/v3"
 	"log"
 	"os"
+
+	"github.com/pressly/goose/v3"
 )
 
 func Migrations(db *sql.DB, migrationDir string) error {
