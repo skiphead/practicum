@@ -54,15 +54,35 @@ func (h *URLHandler) validateURL(originalURL string, w http.ResponseWriter) erro
 		return fmt.Errorf("URL is required")
 	}
 
+	// Первая проверка с помощью утилиты
 	if !utils.IsValidURL(originalURL) {
 		http.Error(w, "Invalid URL", http.StatusBadRequest)
-		return fmt.Errorf("invalid URL scheme or host")
+		return fmt.Errorf("invalid URL")
 	}
 
+	// Парсим URL для более детальной проверки
 	u, err := url.Parse(originalURL)
-	if err != nil || u.Scheme == "" || u.Host == "" || (u.Scheme != "httpclient" && u.Scheme != "https") {
-		http.Error(w, "Invalid URL", http.StatusBadRequest)
-		return fmt.Errorf("invalid URL scheme or host")
+	if err != nil {
+		http.Error(w, "Invalid URL format", http.StatusBadRequest)
+		return fmt.Errorf("invalid URL format: %v", err)
+	}
+
+	// Проверяем наличие схемы (протокола)
+	if u.Scheme == "" {
+		http.Error(w, "URL scheme (protocol) is required", http.StatusBadRequest)
+		return fmt.Errorf("URL scheme is required")
+	}
+
+	// Проверяем наличие хоста
+	if u.Host == "" {
+		http.Error(w, "URL host is required", http.StatusBadRequest)
+		return fmt.Errorf("URL host is required")
+	}
+
+	// Проверяем допустимые протоколы (только HTTP и HTTPS)
+	if u.Scheme != "http" && u.Scheme != "https" {
+		http.Error(w, "Only HTTP and HTTPS protocols are allowed", http.StatusBadRequest)
+		return fmt.Errorf("invalid URL scheme: %s (only http and https are allowed)", u.Scheme)
 	}
 
 	return nil
