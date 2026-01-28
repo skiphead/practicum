@@ -3,12 +3,13 @@ package handler
 import (
 	"context"
 	"fmt"
-	"github.com/skiphead/practicum/pkg/utils"
-	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"net/url"
 	"time"
+
+	"github.com/skiphead/practicum/pkg/utils"
+	"go.uber.org/zap"
 )
 
 func (h *URLHandler) processAndSaveURL(originalURL string, w http.ResponseWriter, r *http.Request) (string, bool, error) {
