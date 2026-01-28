@@ -11,14 +11,6 @@ type Factory struct {
 	mutex    sync.RWMutex
 }
 
-// NewFactory создает новую фабрику
-func NewFactory(cfg Config) *Factory {
-	return &Factory{
-		config:   cfg,
-		adapters: make(map[string]*Adapter),
-	}
-}
-
 // GetAdapter получает или создает адаптер
 func (f *Factory) GetAdapter() (*Adapter, error) {
 	f.mutex.Lock()

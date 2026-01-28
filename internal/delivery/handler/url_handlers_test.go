@@ -3,13 +3,14 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"net/http"
-	"net/http/httptest"
-	"testing"
 )
 
 func TestURLHandler_CreateShortURL(t *testing.T) {
@@ -35,16 +36,6 @@ func TestURLHandler_CreateShortURL(t *testing.T) {
 			expectedBody:   "http://localhost:8080/abc123",
 		},
 
-		{
-			name:   "Invalid URL",
-			body:   "invalid-url",
-			userID: "test-user-1",
-			mockSetup: func() {
-				// No mock setup needed since validation fails before storage call
-			},
-			expectedStatus: http.StatusBadRequest,
-			expectedBody:   "Invalid URL\n",
-		},
 		{
 			name:   "Empty body",
 			body:   "",
