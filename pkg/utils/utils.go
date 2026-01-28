@@ -19,7 +19,7 @@ func IsValidURL(s string) bool {
 	}
 
 	// Проверка допустимых схем
-	if u.Scheme != "httpclient" && u.Scheme != "https" {
+	if u.Scheme != "http" && u.Scheme != "https" {
 		return false
 	}
 

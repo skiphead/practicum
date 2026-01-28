@@ -82,19 +82,17 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	/*
-		errAuditClient := h.auditClient.LogEvent(context.Background(), &audit.Event{
-			Timestamp: time.Now().Unix(),
-			Action:    "shorten",
-			UserID:    "",
-			URL:       originalURL,
-		})
-		if errAuditClient != nil {
-			render.Status(r, http.StatusInternalServerError)
-			return
-		}
 
-	*/
+	errAuditClient := h.auditClient.LogEvent(context.Background(), &audit.Event{
+		Timestamp: time.Now().Unix(),
+		Action:    "shorten",
+		UserID:    "",
+		URL:       originalURL,
+	})
+	if errAuditClient != nil {
+		render.Status(r, http.StatusInternalServerError)
+		return
+	}
 
 	w.WriteHeader(http.StatusCreated)
 	_, err = w.Write([]byte(shortURL))

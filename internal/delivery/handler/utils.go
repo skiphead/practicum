@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/skiphead/practicum/pkg/utils"
 	"go.uber.org/zap"
 )
 
@@ -52,12 +51,6 @@ func (h *URLHandler) validateURL(originalURL string, w http.ResponseWriter) erro
 	if originalURL == "" {
 		http.Error(w, "URL is required", http.StatusBadRequest)
 		return fmt.Errorf("URL is required")
-	}
-
-	// Первая проверка с помощью утилиты
-	if !utils.IsValidURL(originalURL) {
-		http.Error(w, "Invalid URL", http.StatusBadRequest)
-		return fmt.Errorf("invalid URL")
 	}
 
 	// Парсим URL для более детальной проверки
