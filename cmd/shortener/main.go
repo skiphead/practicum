@@ -206,38 +206,4 @@ func initAudit(cfg *config.Config) *audit.Adapter {
 	)
 
 	return adapter
-	/*
-		defer service.Close()
-
-		ctx := context.Background()
-
-		// Симуляция работы приложения
-		urls := []string{
-			"https://google.com/search?q=golang",
-			"https://github.com/golang/go",
-			"https://stackoverflow.com/questions/tagged/go",
-		}
-
-		users := []string{"alice", "bob", "charlie"}
-
-		for i := 0; i < 10; i++ {
-			user := users[i%len(users)]
-			url := urls[i%len(urls)]
-
-			// Случайное действие
-			if i%2 == 0 {
-				err = service.LogShorten(ctx, user, url)
-			} else {
-				err = service.LogFollow(ctx, user, url)
-			}
-
-			if err != nil {
-				log.Printf("Combined audit error: %v", err)
-			}
-
-			time.Sleep(50 * time.Millisecond)
-		}
-
-	*/
-
 }

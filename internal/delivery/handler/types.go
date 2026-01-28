@@ -2,17 +2,15 @@ package handler
 
 import (
 	"github.com/skiphead/practicum/internal/audit"
-	"github.com/skiphead/practicum/internal/middleware"
 	"github.com/skiphead/practicum/internal/usecase"
 )
 
 type URLHandler struct {
-	storage         usecase.URLUseCase
-	auditMiddleware middleware.AuditMiddleware
-	auditClient     *audit.Adapter
-	serverAddr      string
-	baseURL         string
-	sessionKey      string
+	storage     usecase.URLUseCase
+	auditClient *audit.Adapter
+	serverAddr  string
+	baseURL     string
+	sessionKey  string
 }
 
 func NewURLHandler(storage usecase.URLUseCase, serverAddr, baseURL, sessionKey string, auditClient *audit.Adapter) *URLHandler {

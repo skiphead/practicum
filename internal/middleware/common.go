@@ -1,31 +1,16 @@
-package middleware
+package handlers
 
 import (
 	"compress/gzip"
-	"github.com/go-chi/chi/v5/middleware"
-	"go.uber.org/zap"
 	"io"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
+	"go.uber.org/zap"
 )
 
-// LoggingMiddleware - middleware для логирования запросов
-func LoggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-
-		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-		next.ServeHTTP(ww, r)
-
-		duration := time.Since(start)
-
-		logRequest(r, duration)
-		logResponse(ww)
-	})
-}
-
-// CompressionMiddleware - middleware для сжатия ответов
 func CompressionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ow := w
@@ -60,12 +45,25 @@ func CompressionMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+func LoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+		next.ServeHTTP(ww, r)
+
+		duration := time.Since(start)
+
+		logRequest(r, duration)
+		logResponse(ww)
+	})
+}
+
 func logRequest(r *http.Request, duration time.Duration) {
 	zap.L().Info("request",
 		zap.String("path", r.URL.Path),
 		zap.String("method", r.Method),
-		zap.Duration("duration", duration),
-		zap.String("user_agent", r.UserAgent()))
+		zap.Duration("duration", duration))
 }
 
 func logResponse(ww middleware.WrapResponseWriter) {
@@ -81,15 +79,16 @@ func shouldCompressResponse(r *http.Request) bool {
 
 	contentType := r.Header.Get("Content-Type")
 	return strings.HasPrefix(contentType, "text/plain") ||
-		contentType == "application/json" ||
-		contentType == "text/html"
+		contentType == "application/json"
 }
 
 func shouldDecompressRequest(r *http.Request) bool {
+	contentType := r.Header.Get("Content-Type")
+	supportedContentType := contentType == "text/plain" || contentType == "application/json"
 	contentEncoding := r.Header.Get("Content-Encoding")
 	sendsGzip := strings.Contains(contentEncoding, "gzip")
 
-	return sendsGzip
+	return supportedContentType && sendsGzip
 }
 
 type compressWriter struct {
