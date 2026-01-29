@@ -112,7 +112,7 @@ func TestURLHandler_CreateShortAPIURL(t *testing.T) {
 			}
 
 			rr := httptest.NewRecorder()
-			handler.createShortAPIURL(rr, req)
+			handler.CreateShortAPIURL(rr, req)
 
 			assert.Equal(t, tt.expectedStatus, rr.Code)
 
@@ -184,7 +184,7 @@ func TestURLHandler_RedirectURL(t *testing.T) {
 
 			// Создаем роутер и обрабатываем запрос
 			router := chi.NewRouter()
-			router.Get("/{key}", handler.redirectURL)
+			router.Get("/{key}", handler.RedirectURL)
 			router.ServeHTTP(rr, req)
 
 			assert.Equal(t, tt.expectedStatus, rr.Code)

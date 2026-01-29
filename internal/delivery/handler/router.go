@@ -31,11 +31,11 @@ func (h *URLHandler) ChiMux() *chi.Mux {
 	r.Use(mw.LoggingMiddleware)
 
 	// Routes (all covered by audit through middleware)
-	r.Get("/{key}", h.redirectURL)                         // GET /{id} - redirect to original URL
+	r.Get("/{key}", h.RedirectURL)                         // GET /{id} - redirect to original URL
 	r.Get("/api/user/urls", h.getAPIUserUrls)              // GET /api/user/urls - get user's URLs
 	r.Delete("/api/user/urls", h.deleteAPIUserUrls)        // DELETE /api/user/urls - delete user's URLs
 	r.Post("/", h.createShortURL)                          // POST / - create short URL via form
-	r.Post("/api/shorten", h.createShortAPIURL)            // POST /api/shorten - create short URL via JSON API
+	r.Post("/api/shorten", h.CreateShortAPIURL)            // POST /api/shorten - create short URL via JSON API
 	r.Post("/api/shorten/batch", h.createBatchShortAPIURL) // POST /api/shorten/batch - batch URL creation
 	r.Get("/ping", h.pingDB)                               // GET /ping - database health check
 

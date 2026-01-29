@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// createShortAPIURL handles requests to create short URLs via JSON API.
+// CreateShortAPIURL handles requests to create short URLs via JSON API.
 //
 // Endpoint: POST /api/shorten
 // Content-Type: application/json
@@ -32,7 +32,7 @@ import (
 //   - 500 Internal Server Error for audit logging failures
 //
 // The handler also logs audit events for URL shortening operations.
-func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
+func (h *URLHandler) CreateShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	if r.Header.Get("Content-Type") != "application/json" {
@@ -136,7 +136,7 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// redirectURL handles requests to redirect to original URLs using short URL keys.
+// RedirectURL handles requests to redirect to original URLs using short URL keys.
 //
 // Endpoint: GET /{key}
 //
@@ -151,7 +151,7 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 //   - 500 Internal Server Error for audit logging failures
 //
 // The handler also logs audit events for URL follow operations with user tracking.
-func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
+func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
