@@ -14,7 +14,7 @@ func TestShortenRequest_JSON(t *testing.T) {
 		{
 			name:    "Regular URL",
 			request: ShortenRequest{URL: "https://example.com"},
-			want:    `{"url":"https://example.com"}`,
+			want:    `{"url":"https://examples_test.com"}`,
 		},
 		{
 			name:    "Empty URL",

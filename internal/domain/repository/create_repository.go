@@ -11,7 +11,21 @@ import (
 	"github.com/skiphead/practicum/pkg/utils"
 )
 
-// Create создает новую запись сокращенного URL в базе данных.
+// Create creates a new shortened URL record in the database.
+// It generates a unique short code and stores the URL with user ownership and expiration.
+// The operation is performed within a transaction for data consistency.
+//
+// Parameters:
+//   - ctx: Context for timeout and cancellation
+//   - userID: ID of the user creating the URL
+//   - shortCode: Unique identifier for the shortened URL
+//   - originalURL: The original URL to be shortened
+//
+// Returns:
+//   - *entity.ShortURL: Created URL entity with database-generated fields
+//   - error: Database or transaction error if creation fails
+//
+// The URL expires automatically after 1 year from creation.
 func (r *storageRepository) Create(ctx context.Context, userID, shortCode, originalURL string) (*entity.ShortURL, error) {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
@@ -39,7 +53,21 @@ func (r *storageRepository) Create(ctx context.Context, userID, shortCode, origi
 	return &shortURL, nil
 }
 
-// CreateBatch создает пакет коротких URL в транзакции с обработкой пакетами фиксированного размера.
+// CreateBatch creates multiple shortened URLs in a single operation with batch processing.
+// It processes requests in configurable batch sizes to optimize database performance.
+// Each batch is processed in a single transaction for atomicity.
+//
+// Parameters:
+//   - ctx: Context for timeout and cancellation
+//   - userID: ID of the user creating the URLs
+//   - requests: Slice of batch request items with correlation IDs
+//   - batchSize: Maximum number of records to insert per database batch (uses default if ≤0)
+//
+// Returns:
+//   - []entity.ShortURL: Slice of created URL entities
+//   - error: Database or transaction error if batch creation fails
+//
+// Each URL in the batch gets a unique short code and the same expiration date.
 func (r *storageRepository) CreateBatch(
 	ctx context.Context, userID string,
 	requests []entity.BatchShortenRequest,
@@ -60,7 +88,7 @@ func (r *storageRepository) CreateBatch(
 	var allResults []entity.ShortURL
 
 	for start := 0; start < len(requests); start += effectiveBatchSize {
-		end := min(start+effectiveBatchSize, len(requests))
+		end := utils.Min(start+effectiveBatchSize, len(requests))
 		batch := requests[start:end]
 
 		batchResults, err := r.insertBatch(ctx, tx, userID, batch)
@@ -77,7 +105,21 @@ func (r *storageRepository) CreateBatch(
 	return allResults, nil
 }
 
-// insertBatch выполняет вставку одного пакета записей
+// insertBatch executes the insertion of a single batch of URL records.
+// It builds a parameterized SQL query with placeholders for batch insertion.
+// This method is called by CreateBatch for each chunk of requests.
+//
+// Parameters:
+//   - ctx: Context for timeout and cancellation
+//   - tx: Database transaction for batch insertion
+//   - userID: ID of the user creating the URLs
+//   - batch: Slice of batch request items to insert
+//
+// Returns:
+//   - []entity.ShortURL: Created URL entities from this batch
+//   - error: Database error if insertion fails
+//
+// Each URL gets a generated short code and the default expiration time.
 func (r *storageRepository) insertBatch(
 	ctx context.Context,
 	tx pgx.Tx, userID string,
@@ -111,6 +153,15 @@ func (r *storageRepository) insertBatch(
 	return r.scanBatchResults(rows)
 }
 
+// scanBatchResults scans database rows into ShortURL entities.
+// It processes the result set from a batch insertion query.
+//
+// Parameters:
+//   - rows: Database rows from a batch insertion query
+//
+// Returns:
+//   - []entity.ShortURL: Scanned URL entities
+//   - error: Scanning or iteration error if any
 func (r *storageRepository) scanBatchResults(rows pgx.Rows) ([]entity.ShortURL, error) {
 	var results []entity.ShortURL
 

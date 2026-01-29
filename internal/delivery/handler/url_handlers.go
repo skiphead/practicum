@@ -1,3 +1,6 @@
+// Package handler provides HTTP handlers for URL shortening service.
+// It handles creation of short URLs via both JSON API and plain text endpoints,
+// as well as redirection to original URLs.
 package handler
 
 import (
@@ -12,6 +15,23 @@ import (
 	"go.uber.org/zap"
 )
 
+// createShortAPIURL handles requests to create short URLs via JSON API.
+//
+// Endpoint: POST /api/shorten
+// Content-Type: application/json
+//
+// The handler expects a JSON request body with the following structure:
+//
+//	{"url": "https://example.com"}
+//
+// Returns:
+//   - 201 Created with JSON response {"result": "short-url"} on success
+//   - 409 Conflict if the URL already exists (same response body)
+//   - 400 Bad Request for invalid input
+//   - 415 Unsupported Media Type for incorrect Content-Type
+//   - 500 Internal Server Error for audit logging failures
+//
+// The handler also logs audit events for URL shortening operations.
 func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -59,6 +79,20 @@ func (h *URLHandler) createShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	render.JSON(w, r, map[string]string{"result": shortURL})
 }
 
+// createShortURL handles requests to create short URLs via plain text endpoint.
+//
+// Endpoint: POST /
+// Content-Type: text/plain
+//
+// The handler expects a plain text request body containing the URL to shorten.
+//
+// Returns:
+//   - 201 Created with plain text short URL on success
+//   - 409 Conflict if the URL already exists (same response body)
+//   - 400 Bad Request for invalid input
+//   - 500 Internal Server Error for audit logging failures
+//
+// The handler also logs audit events for URL shortening operations.
 func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	body, err := h.readRequestBody(r)
@@ -102,6 +136,21 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// redirectURL handles requests to redirect to original URLs using short URL keys.
+//
+// Endpoint: GET /{key}
+//
+// The handler extracts the short URL key from the request path and redirects
+// to the original URL if it exists and is active.
+//
+// Returns:
+//   - 307 Temporary Redirect on successful redirection
+//   - 404 Not Found if the short URL doesn't exist
+//   - 410 Gone if the short URL exists but is marked as inactive
+//   - 400 Bad Request for root path requests
+//   - 500 Internal Server Error for audit logging failures
+//
+// The handler also logs audit events for URL follow operations with user tracking.
 func (h *URLHandler) redirectURL(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/" {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)

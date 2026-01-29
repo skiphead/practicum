@@ -11,16 +11,26 @@ import (
 	"go.uber.org/zap"
 )
 
-// Config конфигурация адаптера
+// Config represents the configuration for the audit adapter.
+// It defines where audit events should be sent and how they should be processed.
 type Config struct {
-	FilePath     string // Путь к файлу для записи аудита
-	HTTPEndpoint string // URL для отправки аудита по HTTP
-	Enabled      bool   // Включен ли аудит
-	MaxBatchSize int    // Максимальный размер батча для HTTP
-	QueueSize    int    // Размер очереди событий
+	FilePath     string // Path to file for audit logging (empty for no file logging)
+	HTTPEndpoint string // URL for sending audit events via HTTP (empty for no HTTP logging)
+	Enabled      bool   // Whether audit logging is enabled
+	MaxBatchSize int    // Maximum batch size for HTTP events
+	QueueSize    int    // Size of the event processing queue
 }
 
-// DefaultConfig возвращает конфигурацию по умолчанию
+// DefaultConfig returns a default configuration for the audit adapter.
+// This provides sensible defaults for most use cases.
+//
+// Returns:
+//   - Config: Default configuration with:
+//   - FilePath: "/var/log/audit.log"
+//   - HTTPEndpoint: "" (disabled by default)
+//   - Enabled: true
+//   - MaxBatchSize: 1000
+//   - QueueSize: 10000
 func DefaultConfig() Config {
 	return Config{
 		FilePath:     "/var/log/audit.log",
@@ -31,10 +41,19 @@ func DefaultConfig() Config {
 	}
 }
 
-// Validate проверяет корректность конфигурации
+// Validate checks the configuration for correctness.
+// It ensures that numerical parameters are positive and within reasonable bounds.
+//
+// Returns:
+//   - error: Validation error if configuration is invalid, nil otherwise
+//
+// Validation rules:
+//   - MaxBatchSize must be positive (>0)
+//   - QueueSize must be positive (>0)
+//   - Both FilePath and HTTPEndpoint can be empty (adapter will run in no-op mode)
 func (c Config) Validate() error {
-	// Убираем проверку на наличие хотя бы одного приемника
-	// Если оба пустые, адаптер будет работать в "no-op" режиме
+	// Remove check for at least one receiver
+	// If both are empty, adapter will work in "no-op" mode
 
 	if c.MaxBatchSize <= 0 {
 		return fmt.Errorf("MaxBatchSize must be positive")
@@ -47,19 +66,32 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// Adapter адаптирует события для отправки в разные приемники
+// Adapter adapts audit events for delivery to different receivers (file, HTTP).
+// It provides asynchronous event processing with batching for HTTP transport.
 type Adapter struct {
-	fileLogger *audit.Logger
-	httpClient audit.Client
-	config     Config
-	enabled    bool
-	mutex      sync.RWMutex
-	queue      chan *Event
-	wg         sync.WaitGroup
-	done       chan struct{}
+	fileLogger *audit.Logger  // File logger instance
+	httpClient audit.Client   // HTTP client for remote audit logging
+	config     Config         // Adapter configuration
+	enabled    bool           // Whether audit is currently enabled
+	mutex      sync.RWMutex   // Mutex for thread-safe state changes
+	queue      chan *Event    // Channel for queuing audit events
+	wg         sync.WaitGroup // WaitGroup for graceful shutdown
+	done       chan struct{}  // Channel for signaling shutdown
 }
 
-// NewAdapter создает новый адаптер аудита
+// NewAdapter creates a new audit adapter with the given configuration.
+// It initializes file and/or HTTP logging based on the configuration.
+//
+// Parameters:
+//   - cfg: Audit adapter configuration
+//
+// Returns:
+//   - *Adapter: Initialized audit adapter
+//   - error: If configuration is invalid or initialization fails
+//
+// The adapter starts in enabled state only if both:
+// 1. Enabled is true in config
+// 2. At least one receiver (file or HTTP) is configured
 func NewAdapter(cfg Config) (*Adapter, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
@@ -74,7 +106,7 @@ func NewAdapter(cfg Config) (*Adapter, error) {
 
 	var err error
 
-	// Инициализируем файловый логгер только если указан путь
+	// Initialize file logger only if file path is specified
 	if cfg.FilePath != "" {
 		adapter.fileLogger, err = audit.GetInstance(cfg.FilePath)
 		if err != nil {
@@ -82,7 +114,7 @@ func NewAdapter(cfg Config) (*Adapter, error) {
 		}
 	}
 
-	// Инициализируем HTTP клиент только если указан endpoint
+	// Initialize HTTP client only if endpoint is specified
 	if cfg.HTTPEndpoint != "" {
 		httpCfg := httpclient.DefaultConfig()
 		httpCfg.BaseURL = cfg.HTTPEndpoint
@@ -99,20 +131,31 @@ func NewAdapter(cfg Config) (*Adapter, error) {
 		})
 	}
 
-	// Запускаем обработчик очереди, если аудит включен
-	// и есть хотя бы один приемник
+	// Start queue processor if audit is enabled
+	// and at least one receiver is configured
 	if cfg.Enabled && (cfg.FilePath != "" || cfg.HTTPEndpoint != "") {
 		adapter.startProcessor()
 	} else if cfg.Enabled {
-		// Если включен, но приемники не настроены, логируем это
-		// но не создаем очередь и процессор
+		// If enabled but no receivers configured, log this
+		// but don't create queue and processor
 		adapter.enabled = false
 	}
 
 	return adapter, nil
 }
 
-// LogEvent добавляет событие в очередь для обработки
+// LogEvent adds an audit event to the processing queue.
+// The method is non-blocking and returns immediately.
+//
+// Parameters:
+//   - ctx: Context for cancellation/timeout
+//   - event: Audit event to log
+//
+// Returns:
+//   - error: If context is cancelled or queue is full
+//
+// Events are processed asynchronously. If the queue is full,
+// new events are dropped to prevent memory exhaustion.
 func (a *Adapter) LogEvent(ctx context.Context, event *Event) error {
 	a.mutex.RLock()
 	if !a.enabled {
@@ -127,29 +170,31 @@ func (a *Adapter) LogEvent(ctx context.Context, event *Event) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	default:
-		// Очередь переполнена, пропускаем событие
+		// Queue is full, drop the event
 		return fmt.Errorf("audit queue is full, event dropped")
 	}
 }
 
-// startProcessor запускает обработчик очереди событий
+// startProcessor starts the event queue processor in a goroutine.
+// The processor handles batching for HTTP events and direct file writing.
 func (a *Adapter) startProcessor() {
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
 
-		// Если нет HTTP клиента, не создаем батчи
+		// If no HTTP client, process without batching
 		if a.httpClient == nil {
 			a.processWithoutBatching()
 			return
 		}
 
-		// Обработка с батчингом для HTTP
+		// Process with batching for HTTP
 		a.processWithBatching()
 	}()
 }
 
-// processWithoutBatching обрабатывает события без батчинга
+// processWithoutBatching processes events without HTTP batching.
+// Used when only file logging is configured.
 func (a *Adapter) processWithoutBatching() {
 	for {
 		select {
@@ -157,16 +202,17 @@ func (a *Adapter) processWithoutBatching() {
 			return
 
 		case event := <-a.queue:
-			// Отправляем только в файл
+			// Send only to file
 			if err := a.logToFile(event); err != nil {
-				// Логируем ошибку, но продолжаем
+				// Log error but continue
 				zap.L().Error("failed to log audit event", zap.Error(err))
 			}
 		}
 	}
 }
 
-// processWithBatching обрабатывает события с батчингом для HTTP
+// processWithBatching processes events with batching for HTTP transport.
+// Implements time-based and size-based batching for efficient HTTP transmission.
 func (a *Adapter) processWithBatching() {
 	batch := make([]*audit.CreateAuditRequest, 0, a.config.MaxBatchSize)
 	batchTimer := time.NewTimer(1 * time.Second)
@@ -176,28 +222,28 @@ func (a *Adapter) processWithBatching() {
 	for {
 		select {
 		case <-a.done:
-			// Отправляем оставшиеся события перед завершением
+			// Send remaining events before shutdown
 			a.flushBatch(batch)
 			return
 
 		case event := <-a.queue:
-			// Отправляем в файл (синхронно)
+			// Send to file (synchronously)
 			if err := a.logToFile(event); err != nil {
-				// Логируем ошибку, но продолжаем
-				zap.L().Error("Ошибка записи в файл: %v", zap.Error(err))
+				// Log error but continue
+				zap.L().Error("Failed to write to file: %v", zap.Error(err))
 			}
 
-			// Добавляем в батч для HTTP
+			// Add to batch for HTTP
 			if a.httpClient != nil {
 				req := a.convertToAuditRequest(event)
 				batch = append(batch, req)
 
-				// Если батч достиг максимального размера, отправляем
+				// Send batch if it reaches maximum size
 				if len(batch) >= a.config.MaxBatchSize {
 					a.flushBatchHTTP(batch)
 					batch = batch[:0]
 
-					// Останавливаем и сбрасываем таймер
+					// Stop and reset timer
 					if !batchTimer.Stop() {
 						<-batchTimer.C
 					}
@@ -206,7 +252,7 @@ func (a *Adapter) processWithBatching() {
 			}
 
 		case <-batchTimer.C:
-			// Отправляем накопленные события по таймеру
+			// Send accumulated events on timer
 			if len(batch) > 0 {
 				a.flushBatchHTTP(batch)
 				batch = batch[:0]
@@ -216,17 +262,19 @@ func (a *Adapter) processWithBatching() {
 	}
 }
 
-// flushBatch отправляет батч событий
+// flushBatch sends a batch of audit events.
+// This is a wrapper method for different batch types.
 func (a *Adapter) flushBatch(batch []*audit.CreateAuditRequest) {
 	if len(batch) == 0 {
 		return
 	}
 
-	// Отправляем по HTTP
+	// Send via HTTP
 	a.flushBatchHTTP(batch)
 }
 
-// flushBatchHTTP отправляет батч событий по HTTP
+// flushBatchHTTP sends a batch of audit events via HTTP.
+// Implements retry logic and error handling.
 func (a *Adapter) flushBatchHTTP(batch []*audit.CreateAuditRequest) {
 	if a.httpClient == nil || len(batch) == 0 {
 		return
@@ -236,13 +284,14 @@ func (a *Adapter) flushBatchHTTP(batch []*audit.CreateAuditRequest) {
 	defer cancel()
 
 	if err := a.httpClient.BatchCreateAuditEvents(ctx, batch); err != nil {
-		// Логируем ошибку, но не прерываем выполнение
-		// В продакшене можно реализовать dead letter queue
+		// Log error but don't interrupt execution
+		// In production, implement dead letter queue
 		zap.L().Error("failed to batch audit event", zap.Error(err))
 	}
 }
 
-// logToFile записывает событие в файл
+// logToFile writes an audit event to the file.
+// Handles different event types with appropriate logging methods.
 func (a *Adapter) logToFile(event *Event) error {
 	if a.fileLogger == nil {
 		return nil
@@ -258,6 +307,7 @@ func (a *Adapter) logToFile(event *Event) error {
 	}
 }
 
+// convertToAuditRequest converts an adapter Event to an audit service request.
 func (a *Adapter) convertToAuditRequest(event *Event) *audit.CreateAuditRequest {
 	return &audit.CreateAuditRequest{
 		TS:     int(event.Timestamp),
@@ -267,21 +317,23 @@ func (a *Adapter) convertToAuditRequest(event *Event) *audit.CreateAuditRequest 
 	}
 }
 
-// Enable включает аудит
+// Enable enables audit logging.
+// Starts the processor if it's not already running and receivers are configured.
 func (a *Adapter) Enable() {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
 
 	if !a.enabled {
 		a.enabled = true
-		// Запускаем процессор только если есть приемники
+		// Start processor only if receivers are configured
 		if a.config.FilePath != "" || a.config.HTTPEndpoint != "" {
 			a.startProcessor()
 		}
 	}
 }
 
-// Disable выключает аудит
+// Disable disables audit logging.
+// Stops the processor and waits for pending events to be processed.
 func (a *Adapter) Disable() {
 	a.mutex.Lock()
 	defer a.mutex.Unlock()
@@ -294,7 +346,11 @@ func (a *Adapter) Disable() {
 	}
 }
 
-// Close закрывает адаптер
+// Close gracefully shuts down the audit adapter.
+// Disables logging and releases all resources.
+//
+// Returns:
+//   - error: If file logger fails to close
 func (a *Adapter) Close() error {
 	a.Disable()
 

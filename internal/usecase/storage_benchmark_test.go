@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// Mock структуры
+// Mock structures
 type mockFileStorage struct {
 	mock.Mock
 }
@@ -21,7 +21,7 @@ type mockURLRepository struct {
 	mock.Mock
 }
 
-// Mock методы для FileStorage - ВСЕ методы интерфейса
+// Mock methods for FileStorage - ALL interface methods
 func (m *mockFileStorage) Save(userID, correlationID, shortCode, originalURL string) error {
 	args := m.Called(userID, correlationID, shortCode, originalURL)
 	return args.Error(0)
@@ -87,7 +87,7 @@ func (m *mockFileStorage) Stats() map[string]interface{} {
 	return args.Get(0).(map[string]interface{})
 }
 
-// Mock методы для URLRepository - ВСЕ методы интерфейса
+// Mock methods for URLRepository - ALL interface methods
 func (m *mockURLRepository) Ping(ctx context.Context) error {
 	args := m.Called(ctx)
 	return args.Error(0)
@@ -154,7 +154,6 @@ func (m *mockURLRepository) UpdateIsActive(ctx context.Context, shortCodes []str
 	return args.Get(0).([]string), args.Error(1)
 }
 
-// Новые методы
 func (m *mockURLRepository) Update(ctx context.Context, shortURL *entity.ShortURL) (*entity.ShortURL, error) {
 	args := m.Called(ctx, shortURL)
 	if args.Get(0) == nil {
@@ -168,7 +167,7 @@ func (m *mockURLRepository) Delete(ctx context.Context, id string) (string, erro
 	return args.String(0), args.Error(1)
 }
 
-// Основные Benchmark функции
+// Base Benchmark function
 func BenchmarkSave(b *testing.B) {
 	ctx := context.Background()
 	originalURL := "https://example.com"
@@ -180,7 +179,7 @@ func BenchmarkSave(b *testing.B) {
 
 	uc := NewStorageUseCase("http://localhost:8080", mockFile, mockRepo)
 
-	// Настройка моков для успешного случая
+	// Setting up mocks for successful operation
 	mockRepo.On("Ping", ctx).Return(nil)
 	mockRepo.On("Create", ctx, userID, mock.Anything, originalURL).Return(&entity.ShortURL{
 		OriginalURL: originalURL,
@@ -203,7 +202,7 @@ func BenchmarkGet(b *testing.B) {
 
 	uc := NewStorageUseCase("http://localhost:8080", mockFile, mockRepo)
 
-	// Настройка моков
+	// Setting up mocks
 	mockRepo.On("Ping", ctx).Return(nil)
 	mockRepo.On("Get", ctx, shortCode).Return(&entity.ShortURL{
 		OriginalURL: "https://example.com",
@@ -220,7 +219,7 @@ func BenchmarkBatchSave(b *testing.B) {
 	ctx := context.Background()
 	userID := "test-user"
 
-	// Подготовка тестовых данных
+	// Preparing test data
 	urls := make([]entity.BatchShortenRequest, 100)
 	for i := range urls {
 		urls[i] = entity.BatchShortenRequest{
@@ -234,7 +233,7 @@ func BenchmarkBatchSave(b *testing.B) {
 
 	uc := NewStorageUseCase("http://localhost:8080", mockFile, mockRepo)
 
-	// Настройка моков
+	// Setting up mocks
 	shortURLs := make([]entity.ShortURL, len(urls))
 	for i := range shortURLs {
 		shortURLs[i] = entity.ShortURL{
@@ -263,7 +262,7 @@ func BenchmarkDeleted(b *testing.B) {
 
 	uc := NewStorageUseCase("http://localhost:8080", mockFile, mockRepo)
 
-	// Настройка моков - база доступна
+	// Setting up mocks - database is available
 	mockRepo.On("Ping", ctx).Return(nil)
 	mockRepo.On("UpdateIsActive", mock.Anything, mock.Anything, userID, false, mock.Anything).
 		Return([]string{}, nil)
@@ -282,7 +281,7 @@ func BenchmarkPing(b *testing.B) {
 
 	uc := NewStorageUseCase("http://localhost:8080", mockFile, mockRepo)
 
-	// Настройка моков
+	// Setting up mocks
 	mockRepo.On("Ping", ctx).Return(nil)
 
 	b.ResetTimer()

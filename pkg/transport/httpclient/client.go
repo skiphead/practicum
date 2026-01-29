@@ -1,3 +1,6 @@
+// Package httpclient provides an HTTP client for working with audit APIs.
+// The client supports retries, error handling, response size limiting,
+// and other features for reliable operation with external APIs.
 package httpclient
 
 import (
@@ -14,32 +17,43 @@ import (
 	"time"
 )
 
-// Client интерфейс HTTP клиента
+// Client interface for the HTTP client.
+// Defines the main methods for sending requests and managing retries.
 type Client interface {
+	// SendRequest sends an HTTP request with the given method, path, and body.
+	// Returns an error on failure. Handles various error types,
+	// including network errors, timeouts, client and server errors.
 	SendRequest(ctx context.Context, method, path string, body interface{}) error
+
+	// ShouldRetry determines whether a request should be retried when an error occurs.
+	// Returns a boolean value and the delay until the next attempt.
 	ShouldRetry(err error, attempt int, opts RetryOptions) (bool, time.Duration)
 }
 
-// HTTPClient представляет HTTP клиент для API аудита
+// HTTPClient represents an HTTP client for audit APIs.
+// Implements the Client interface with support for configuration, retries,
+// and error handling.
 type HTTPClient struct {
 	config     Config
 	httpClient *http.Client
 }
 
+// Check that HTTPClient implements the Client interface.
 var _ Client = (*HTTPClient)(nil)
 
-// Config Конфигурация HTTP клиента
+// Config contains configuration parameters for the HTTP client.
 type Config struct {
-	BaseURL         string
-	Timeout         int // Секунды
-	MaxRetries      int
-	RetryDelay      int
-	UserAgent       string
-	MaxResponseSize int // в байтах
-	MaxBatchSize    int // максимальный размер пачки
+	BaseURL         string // Base URL of the API
+	Timeout         int    // Request timeout in seconds
+	MaxRetries      int    // Maximum number of retry attempts
+	RetryDelay      int    // Base delay between attempts in seconds
+	UserAgent       string // User-Agent header
+	MaxResponseSize int    // Maximum response size in bytes
+	MaxBatchSize    int    // Maximum batch size for batch operations
 }
 
-// DefaultConfig возвращает конфигурацию по умолчанию
+// DefaultConfig returns the default configuration.
+// Used as a starting point for client setup.
 func DefaultConfig() Config {
 	return Config{
 		BaseURL:         "http://localhost:8081",
@@ -52,7 +66,8 @@ func DefaultConfig() Config {
 	}
 }
 
-// Validate проверяет конфигурацию на корректность
+// Validate checks the configuration for correctness.
+// Returns an error if any parameters are invalid.
 func (c Config) Validate() error {
 	if c.BaseURL == "" {
 		return fmt.Errorf("BaseURL cannot be empty")
@@ -71,7 +86,7 @@ func (c Config) Validate() error {
 	}
 
 	if c.RetryDelay < 0 {
-		return fmt.Errorf("validete error RetryDelay cannot be negative")
+		return fmt.Errorf("validete error RetryAfter cannot be negative")
 	}
 
 	if c.UserAgent == "" {
@@ -93,10 +108,20 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// Option функция для настройки клиента
+// Option function for configuring the client using functional options.
 type Option func(*HTTPClient) error
 
-// New создает новый экземпляр HTTP клиента
+// New creates a new instance of the HTTP client with the given configuration.
+// Accepts optional parameters for additional configuration.
+// Returns an error if the configuration is invalid.
+//
+// Example of creating a client:
+//
+//	config := httpclient.DefaultConfig()
+//	client, err := httpclient.New(config)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 func New(config Config, opts ...Option) (*HTTPClient, error) {
 	if err := config.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid config: %w", err)
@@ -123,7 +148,15 @@ func New(config Config, opts ...Option) (*HTTPClient, error) {
 	return client, nil
 }
 
-// WithHTTPClient устанавливает кастомный HTTP клиент
+// WithHTTPClient sets a custom HTTP client.
+// Useful for injecting mocks in tests or using clients with special settings.
+//
+// Example:
+//
+//	customClient := &http.Client{
+//	    Timeout: 60 * time.Second,
+//	}
+//	client, err := httpclient.New(config, httpclient.WithHTTPClient(customClient))
 func WithHTTPClient(httpClient *http.Client) Option {
 	return func(c *HTTPClient) error {
 		if httpClient == nil {
@@ -134,7 +167,12 @@ func WithHTTPClient(httpClient *http.Client) Option {
 	}
 }
 
-// WithBaseURL устанавливает базовый URL
+// WithBaseURL sets the base URL for the API.
+// Overrides the URL from the configuration.
+//
+// Example:
+//
+//	client, err := httpclient.New(config, httpclient.WithBaseURL("https://api.example.com"))
 func WithBaseURL(baseURL string) Option {
 	return func(c *HTTPClient) error {
 		if baseURL == "" {
@@ -148,7 +186,12 @@ func WithBaseURL(baseURL string) Option {
 	}
 }
 
-// WithTimeout устанавливает таймаут
+// WithTimeout sets the timeout for HTTP requests.
+// Overrides the timeout from the configuration.
+//
+// Example:
+//
+//	client, err := httpclient.New(config, httpclient.WithTimeout(60*time.Second))
 func WithTimeout(timeout time.Duration) Option {
 	return func(c *HTTPClient) error {
 		if timeout <= 0 {
@@ -159,9 +202,38 @@ func WithTimeout(timeout time.Duration) Option {
 	}
 }
 
-// SendRequest отправляет запрос к API аудита
+// SendRequest sends a request to the audit API.
+// Supports all main HTTP methods (GET, POST, PUT, DELETE, etc.).
+// Automatically serializes the request body to JSON and handles the response.
+//
+// Example of sending a POST request:
+//
+//	ctx := context.Background()
+//	auditEvent := map[string]interface{}{
+//	    "action":    "user_login",
+//	    "user_id":   123,
+//	    "timestamp": time.Now(),
+//	}
+//
+//	err := client.SendRequest(ctx, "POST", "/api/v1/audit", auditEvent)
+//	if err != nil {
+//	    // Handle error
+//	    var apiErr *httpclient.APIError
+//	    if errors.As(err, &apiErr) {
+//	        switch apiErr.Type {
+//	        case httpclient.ErrorTypeRateLimit:
+//	            log.Printf("Rate limit exceeded, retry after: %s", apiErr.RetryAfter)
+//	        case httpclient.ErrorTypeServer:
+//	            log.Printf("Server error: %s", apiErr.Message)
+//	        }
+//	    }
+//	}
+//
+// Example of sending a GET request:
+//
+//	err := client.SendRequest(ctx, "GET", "/api/v1/audit/123", nil)
 func (c *HTTPClient) SendRequest(ctx context.Context, method, path string, body interface{}) error {
-	// Сериализуем тело запроса
+	// Serialize the request body
 	var bodyBytes []byte
 	var err error
 	if body != nil {
@@ -175,10 +247,10 @@ func (c *HTTPClient) SendRequest(ctx context.Context, method, path string, body 
 		}
 	}
 
-	// Формируем URL запроса
+	// Form the request URL
 	urlStr := fmt.Sprintf("%s%s", c.config.BaseURL, path)
 
-	// Создаем HTTP запрос
+	// Create the HTTP request
 	var bodyReader io.Reader
 	if bodyBytes != nil {
 		bodyReader = bytes.NewReader(bodyBytes)
@@ -192,15 +264,15 @@ func (c *HTTPClient) SendRequest(ctx context.Context, method, path string, body 
 		}
 	}
 
-	// Устанавливаем заголовки
+	// Set headers
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", c.config.UserAgent)
 
-	// Выполняем запрос
+	// Execute the request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		// Проверяем, была ли ошибка из-за таймаута контекста
+		// Check if the error was due to context timeout
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return &APIError{
 				Type:        ErrorTypeTimeout,
@@ -219,7 +291,7 @@ func (c *HTTPClient) SendRequest(ctx context.Context, method, path string, body 
 		_ = resp.Body.Close()
 	}()
 
-	// Читаем тело ответа с ограничением размера
+	// Read the response body with size limitation
 	limitedReader := io.LimitReader(resp.Body, int64(c.config.MaxResponseSize))
 	responseBody, errReadAll := io.ReadAll(limitedReader)
 	if errReadAll != nil {
@@ -231,9 +303,9 @@ func (c *HTTPClient) SendRequest(ctx context.Context, method, path string, body 
 		}
 	}
 
-	// Проверяем, не был ли ответ обрезан
+	// Check if the response was truncated
 	if len(responseBody) == c.config.MaxResponseSize {
-		// Пытаемся прочитать еще один байт, чтобы убедиться, что ответ был обрезан
+		// Try to read one more byte to confirm the response was truncated
 		var extraByte [1]byte
 		n, _ := resp.Body.Read(extraByte[:])
 		if n > 0 {
@@ -245,7 +317,7 @@ func (c *HTTPClient) SendRequest(ctx context.Context, method, path string, body 
 		}
 	}
 
-	// Обрабатываем статус код
+	// Handle the status code
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusCreated, http.StatusAccepted:
 		return nil
@@ -309,7 +381,8 @@ func (c *HTTPClient) SendRequest(ctx context.Context, method, path string, body 
 	}
 }
 
-// APIError представляет ошибку API
+// APIError represents an API error.
+// Contains the error type, status code, message, and original error (if any).
 type APIError struct {
 	Type        ErrorType
 	StatusCode  int
@@ -318,6 +391,7 @@ type APIError struct {
 	RetryAfter  string
 }
 
+// Error returns the string representation of the error.
 func (e *APIError) Error() string {
 	if e.OriginalErr != nil {
 		return fmt.Sprintf("%s (status: %d): %s: %v", e.Type, e.StatusCode, e.Message, e.OriginalErr)
@@ -325,11 +399,13 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("%s (status: %d): %s", e.Type, e.StatusCode, e.Message)
 }
 
+// Unwrap returns the original error.
+// Allows using errors.As and errors.Is to check the error type.
 func (e *APIError) Unwrap() error {
 	return e.OriginalErr
 }
 
-// ErrorType тип ошибки
+// ErrorType type of error.
 type ErrorType string
 
 const (
@@ -343,17 +419,18 @@ const (
 	ErrorTypeUnknown          ErrorType = "unknown"
 )
 
-// RetryOption параметры для повторных попыток
+// RetryOption function for configuring retry parameters.
 type RetryOption func(*RetryOptions)
 
+// RetryOptions contains parameters for retries.
 type RetryOptions struct {
-	MaxRetries  int
-	RetryDelay  time.Duration
-	MaxWaitTime time.Duration
-	RetryOn     []int // статус коды для повторных попыток
+	MaxRetries  int           // Maximum number of attempts
+	RetryDelay  time.Duration // Base delay between attempts
+	MaxWaitTime time.Duration // Maximum total wait time
+	RetryOn     []int         // Status codes for retries
 }
 
-// DefaultRetryOptions дефолтные настройки для повторных попыток
+// DefaultRetryOptions default settings for retries.
 var DefaultRetryOptions = RetryOptions{
 	MaxRetries:  3,
 	RetryDelay:  1 * time.Second,
@@ -361,7 +438,12 @@ var DefaultRetryOptions = RetryOptions{
 	RetryOn:     []int{429, 500, 502, 503, 504},
 }
 
-// WithMaxRetries устанавливает максимальное количество повторных попыток
+// WithMaxRetries sets the maximum number of retry attempts.
+//
+// Example usage:
+//
+//	opts := httpclient.DefaultRetryOptions
+//	opts = httpclient.WithMaxRetries(5)(opts)
 func WithMaxRetries(maxRetries int) RetryOption {
 	return func(opts *RetryOptions) {
 		if maxRetries < 0 {
@@ -371,7 +453,12 @@ func WithMaxRetries(maxRetries int) RetryOption {
 	}
 }
 
-// WithRetryDelay устанавливает задержку между попытками
+// WithRetryDelay sets the delay between attempts.
+//
+// Example:
+//
+//	opts := httpclient.DefaultRetryOptions
+//	opts = httpclient.WithRetryDelay(2*time.Second)(opts)
 func WithRetryDelay(delay time.Duration) RetryOption {
 	return func(opts *RetryOptions) {
 		if delay < 0 {
@@ -381,7 +468,12 @@ func WithRetryDelay(delay time.Duration) RetryOption {
 	}
 }
 
-// WithMaxWaitTime устанавливает максимальное время ожидания всех попыток
+// WithMaxWaitTime sets the maximum waiting time for all attempts.
+//
+// Example:
+//
+//	opts := httpclient.DefaultRetryOptions
+//	opts = httpclient.WithMaxWaitTime(60*time.Second)(opts)
 func WithMaxWaitTime(maxWaitTime time.Duration) RetryOption {
 	return func(opts *RetryOptions) {
 		if maxWaitTime <= 0 {
@@ -391,16 +483,39 @@ func WithMaxWaitTime(maxWaitTime time.Duration) RetryOption {
 	}
 }
 
-// WithRetryOn устанавливает статус коды для повторных попыток
+// WithRetryOn sets status codes for retries.
+//
+// Example:
+//
+//	opts := httpclient.DefaultRetryOptions
+//	opts = httpclient.WithRetryOn(408, 429, 500, 502, 503, 504)(opts)
 func WithRetryOn(statusCodes ...int) RetryOption {
 	return func(opts *RetryOptions) {
 		opts.RetryOn = statusCodes
 	}
 }
 
-// ShouldRetry определяет, нужно ли делать повторную попытку
+// ShouldRetry determines whether to retry on error.
+// Returns true and the delay until the next attempt if retry is needed.
+// Uses exponential delay with jitter to prevent stampeding herd.
+//
+// Example usage in a retry loop:
+//
+//	for attempt := 0; attempt <= maxRetries; attempt++ {
+//	    err := client.SendRequest(ctx, method, path, body)
+//	    if err == nil {
+//	        break // Success
+//	    }
+//
+//	    shouldRetry, delay := client.ShouldRetry(err, attempt, retryOpts)
+//	    if !shouldRetry {
+//	        return err // Cannot retry
+//	    }
+//
+//	    time.Sleep(delay) // Wait before the next attempt
+//	}
 func (c *HTTPClient) ShouldRetry(err error, attempt int, opts RetryOptions) (bool, time.Duration) {
-	// Если достигнуто максимальное количество попыток, не повторяем
+	// If maximum attempts reached, do not retry
 	if attempt >= opts.MaxRetries {
 		return false, 0
 	}
@@ -408,21 +523,21 @@ func (c *HTTPClient) ShouldRetry(err error, attempt int, opts RetryOptions) (boo
 	var apiErr *APIError
 	ok := errors.As(err, &apiErr)
 	if !ok {
-		// Если это не APIError, не повторяем
+		// If this is not an APIError, do not retry
 		return false, 0
 	}
 
-	// Не повторяем для ошибок таймаута
+	// Do not retry for timeout errors
 	if apiErr.Type == ErrorTypeTimeout {
 		return false, 0
 	}
 
-	// Не повторяем для клиентских ошибок (кроме 429)
+	// Do not retry for client errors (except 429)
 	if apiErr.Type == ErrorTypeClient && apiErr.StatusCode != 429 {
 		return false, 0
 	}
 
-	// Проверяем, нужно ли повторять для данного статус кода
+	// Check if we should retry for this status code
 	shouldRetryStatusCode := false
 	for _, statusCode := range opts.RetryOn {
 		if apiErr.StatusCode == statusCode {
@@ -435,30 +550,30 @@ func (c *HTTPClient) ShouldRetry(err error, attempt int, opts RetryOptions) (boo
 		return false, 0
 	}
 
-	// Вычисляем базовую задержку
+	// Calculate base delay
 	delay := opts.RetryDelay
 
-	// Для rate limit используем заголовок Retry-After
+	// For rate limit, use the Retry-After header
 	if apiErr.Type == ErrorTypeRateLimit && apiErr.RetryAfter != "" {
 		if retryDelay, parseErr := parseRetryAfter(apiErr.RetryAfter); parseErr == nil {
 			delay = retryDelay
 		}
 	}
 
-	// Экспоненциальная задержка
-	delay = delay * (1 << uint(attempt)) // Умножаем на 2^attempt
+	// Exponential delay
+	delay = delay * (1 << uint(attempt)) // Multiply by 2^attempt
 
-	// Добавляем случайный джиттер (±20%)
+	// Add random jitter (±20%)
 	jitterPercent := 0.4 // ±20%
 	jitterMultiplier := 1 + (rand.Float64()*jitterPercent - jitterPercent/2)
 	delay = time.Duration(float64(delay) * jitterMultiplier)
 
-	// Ограничиваем задержку снизу (минимум 10 мс)
+	// Limit delay from below (minimum 10 ms)
 	if delay < 10*time.Millisecond {
 		delay = 10 * time.Millisecond
 	}
 
-	// Ограничиваем задержку сверху
+	// Limit delay from above
 	if delay > 30*time.Second {
 		delay = 30 * time.Second
 	}
@@ -466,34 +581,35 @@ func (c *HTTPClient) ShouldRetry(err error, attempt int, opts RetryOptions) (boo
 	return true, delay
 }
 
-// parseRetryAfter парсит заголовок Retry-After
+// parseRetryAfter parses the Retry-After header.
+// Supports parsing both as seconds (integer) and dates in RFC1123, RFC1123Z and RFC3339 formats.
 func parseRetryAfter(retryAfter string) (time.Duration, error) {
 	if retryAfter == "" {
 		return 0, fmt.Errorf("empty retry-after")
 	}
 
-	// Пробуем парсить как секунды (целое число)
+	// Try to parse as seconds (integer)
 	if seconds, err := strconv.Atoi(retryAfter); err == nil {
 		if seconds < 0 {
 			return 0, fmt.Errorf("retry-after seconds cannot be negative")
 		}
-		if seconds > 86400 { // 24 часа
+		if seconds > 86400 { // 24 hours
 			return 0, fmt.Errorf("retry-after seconds too large: %d", seconds)
 		}
 		return time.Duration(seconds) * time.Second, nil
 	}
 
-	// Пробуем парсить как RFC1123 дату
+	// Try to parse as RFC1123 date
 	if date, err := time.Parse(time.RFC1123, retryAfter); err == nil {
 		return calculateRetryDuration(date)
 	}
 
-	// Пробуем парсить как RFC1123Z (с часовым поясом)
+	// Try to parse as RFC1123Z (with timezone)
 	if date, err := time.Parse(time.RFC1123Z, retryAfter); err == nil {
 		return calculateRetryDuration(date)
 	}
 
-	// Пробуем парсить как RFC3339
+	// Try to parse as RFC3339
 	if date, err := time.Parse(time.RFC3339, retryAfter); err == nil {
 		return calculateRetryDuration(date)
 	}
@@ -501,12 +617,13 @@ func parseRetryAfter(retryAfter string) (time.Duration, error) {
 	return 0, fmt.Errorf("invalid retry-after format: %s", retryAfter)
 }
 
-// calculateRetryDuration вычисляет длительность до указанной даты
+// calculateRetryDuration calculates the duration until the specified date.
+// Returns an error if the date is in the past or too far in the future.
 func calculateRetryDuration(date time.Time) (time.Duration, error) {
 	now := time.Now()
 	if date.After(now) {
 		duration := date.Sub(now)
-		// Ограничиваем максимальную задержку (например, 24 часа)
+		// Limit maximum delay (e.g., 24 hours)
 		if duration > 24*time.Hour {
 			return 0, fmt.Errorf("retry-after date too far in the future: %v", date)
 		}

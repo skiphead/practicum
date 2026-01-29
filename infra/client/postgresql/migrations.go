@@ -11,14 +11,14 @@ import (
 
 func Migrations(db *sql.DB, migrationDir string) error {
 
-	// Устанавливаем миграции из указанной директории
+	// Set up migrations from the specified directory
 	goose.SetBaseFS(os.DirFS(migrationDir))
 
 	if err := goose.SetDialect("postgres"); err != nil {
 		return fmt.Errorf("failed to set dialect: %w", err)
 	}
 
-	// Применяем миграции до последней версии
+	// Apply migrations up to the latest version
 	if err := goose.Up(db, "."); err != nil {
 		return fmt.Errorf("failed to apply migrations: %w", err)
 	}

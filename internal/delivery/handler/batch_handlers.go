@@ -11,6 +11,25 @@ import (
 	"go.uber.org/zap"
 )
 
+// createBatchShortAPIURL handles batch creation of shortened URLs via JSON API.
+// It accepts an array of URLs and returns an array of shortened URL objects.
+// The method performs duplicate checking before creating new shortened URLs.
+//
+// Request:
+//   - Method: POST
+//   - Path: /api/shorten/batch
+//   - Content-Type: application/json
+//   - Body: JSON array of objects with "correlation_id" and "original_url" fields
+//
+// Response:
+//   - 201 Created: Returns array of shortened URL objects with correlation IDs
+//   - 409 Conflict: If duplicates found, returns existing shortened URLs
+//   - 400 Bad Request: Invalid JSON or missing required fields
+//   - 401 Unauthorized: User not authenticated
+//   - 415 Unsupported Media Type: Incorrect Content-Type header
+//   - 500 Internal Server Error: Storage or processing error
+//
+// The method includes a 5-second timeout for database operations.
 func (h *URLHandler) createBatchShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
