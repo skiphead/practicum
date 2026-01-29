@@ -1,23 +1,21 @@
-package utils_exaple
+package utils
 
 import (
 	"fmt"
 	"log"
-
-	"github.com/skiphead/practicum/pkg/utils"
 )
 
 func ExampleIsValidURL() {
 	// Valid URLs
-	fmt.Println(utils.IsValidURL("https://example.com"))
-	fmt.Println(utils.IsValidURL("http://sub.example.com/path?query=param"))
-	fmt.Println(utils.IsValidURL("http://localhost:8080"))
+	fmt.Println(IsValidURL("https://example.com"))
+	fmt.Println(IsValidURL("http://sub.example.com/path?query=param"))
+	fmt.Println(IsValidURL("http://localhost:8080"))
 
 	// Invalid URLs
-	fmt.Println(utils.IsValidURL("examples_test.com"))          // Missing scheme
-	fmt.Println(utils.IsValidURL("ftp://files.com"))            // Invalid scheme
-	fmt.Println(utils.IsValidURL("https://"))                   // Missing host
-	fmt.Println(utils.IsValidURL("https:// examples_test.com")) // Contains space
+	fmt.Println(IsValidURL("examples_test.com"))          // Missing scheme
+	fmt.Println(IsValidURL("ftp://files.com"))            // Invalid scheme
+	fmt.Println(IsValidURL("https://"))                   // Missing host
+	fmt.Println(IsValidURL("https:// examples_test.com")) // Contains space
 
 	// Output:
 	// true
@@ -31,7 +29,7 @@ func ExampleIsValidURL() {
 
 func ExampleGenerateRandomKey() {
 	// Generate a random key
-	key := utils.GenerateRandomKey()
+	key := GenerateRandomKey()
 
 	// The key will always be 8 characters long
 	fmt.Println(len(key) == 8)
@@ -54,14 +52,14 @@ func ExampleGenerateRandomKey() {
 
 func ExampleGenerateRandomKey_usage() {
 	// Typical usage for generating API keys or tokens
-	apiKey := utils.GenerateRandomKey()
+	apiKey := GenerateRandomKey()
 
 	// Use the generated key in your application
 	log.Printf("Generated API key: %s", apiKey)
 
 	// You can generate multiple unique keys
-	key1 := utils.GenerateRandomKey()
-	key2 := utils.GenerateRandomKey()
+	key1 := GenerateRandomKey()
+	key2 := GenerateRandomKey()
 
 	// They will (almost certainly) be different
 	fmt.Println(key1 != key2)
@@ -79,7 +77,7 @@ func ExampleIsValidURL_usage() {
 	}
 
 	for _, u := range urls {
-		if utils.IsValidURL(u) {
+		if IsValidURL(u) {
 			fmt.Printf("Valid URL: %s\n", u)
 		} else {
 			fmt.Printf("Invalid URL: %s\n", u)
