@@ -3,11 +3,12 @@ package handler
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
+
 	"github.com/skiphead/practicum/internal/audit"
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/stretchr/testify/mock"
-	"net/http"
-	"net/http/httptest"
 )
 
 // MockURLUseCase реализация мока для usecase

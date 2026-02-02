@@ -12,6 +12,7 @@ func TestNewDefaultConfig(t *testing.T) {
 		t.Errorf("Expected ServerAddr 'localhost:8080', got '%s'", cfg.ServerAddr)
 	}
 }
+
 func TestConfig_Validate(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -69,7 +70,6 @@ func TestConfig_Validate(t *testing.T) {
 }
 
 func TestGetEnvLoadConfig(t *testing.T) {
-
 	key := "SERVER_ADDRESS"
 	value := "localhost:8082"
 	errSetEnv := os.Setenv(key, value)
@@ -83,12 +83,12 @@ func TestGetEnvLoadConfig(t *testing.T) {
 		t.Errorf("Error loading config: %v", err)
 	}
 
-	//Тест переменная установлена
+	// Test that variable is set
 	if cfg.ServerAddr != value {
 		t.Errorf("Expected '%s', got '%s'", value, cfg.ServerAddr)
 	}
-	//Тест переменная не установлена
-	resultEmpty := os.Getenv("Какая-то-переменная")
+	// Test that variable is not set
+	resultEmpty := os.Getenv("Some-Variable")
 	if cfg.ServerAddr == resultEmpty {
 		t.Errorf("Expected empty string, got '%s'", resultEmpty)
 	}

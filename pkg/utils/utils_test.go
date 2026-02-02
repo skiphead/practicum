@@ -14,10 +14,10 @@ func TestIsValidURL(t *testing.T) {
 		{"valid HTTPS URL", "https://example.com", true},
 		{"valid URL with path", "https://example.com/path/to/resource", true},
 		{"valid URL with query params", "https://example.com?param=value", true},
-		{"invalid URL - no scheme", "example.com", false},
-		{"invalid URL - bad scheme", "ftp://example.com", false},
+		{"invalid URL - no scheme", "examples_test.com", false},
+		{"invalid URL - bad scheme", "ftp://examples_test.com", false},
 		{"invalid URL - empty string", "", false},
-		{"invalid URL - malformed", "://example.com", false},
+		{"invalid URL - malformed", "://examples_test.com", false},
 		{"invalid URL - spaces", "https://example.com/path with spaces", false},
 	}
 

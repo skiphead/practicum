@@ -66,7 +66,7 @@ func BenchmarkURLHandler_CreateShortAPIURL(b *testing.B) {
 		req.Header.Set("Content-Type", "application/json")
 
 		rr := httptest.NewRecorder()
-		handler.createShortAPIURL(rr, req)
+		handler.CreateShortAPIURL(rr, req)
 	}
 }
 
@@ -91,7 +91,7 @@ func BenchmarkURLHandler_RedirectURL(b *testing.B) {
 
 		// Создаем роутер для каждой итерации
 		router := chi.NewRouter()
-		router.Get("/{key}", handler.redirectURL)
+		router.Get("/{key}", handler.RedirectURL)
 		router.ServeHTTP(rr, req)
 	}
 }
@@ -112,7 +112,7 @@ func BenchmarkURLHandler_RedirectURL_NotFound(b *testing.B) {
 		rr := httptest.NewRecorder()
 
 		router := chi.NewRouter()
-		router.Get("/{key}", handler.redirectURL)
+		router.Get("/{key}", handler.RedirectURL)
 		router.ServeHTTP(rr, req)
 	}
 }
@@ -163,7 +163,7 @@ func BenchmarkURLHandler_CreateAndRedirect(b *testing.B) {
 		rrRedirect := httptest.NewRecorder()
 
 		router := chi.NewRouter()
-		router.Get("/{key}", handler.redirectURL)
+		router.Get("/{key}", handler.RedirectURL)
 		router.ServeHTTP(rrRedirect, reqRedirect)
 	}
 }

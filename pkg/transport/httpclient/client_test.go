@@ -233,15 +233,15 @@ func TestHTTPClient_SendRequest(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte("internal server error"))
 		case "/large-response":
-			// Генерируем ответ больше лимита
+			// Generate a response larger than the limit
 			largeData := strings.Repeat("x", 1024*1024) // 1MB
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(largeData))
 		case "/truncated-response":
-			// Ответ точно на границе лимита
+			// Response exactly at the limit boundary
 			w.Header().Set("Content-Length", "1025")
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(strings.Repeat("x", 1024))) // ровно 1KB
+			w.Write([]byte(strings.Repeat("x", 1024))) // exactly 1KB
 		case "/slow":
 			time.Sleep(2 * time.Second)
 			w.WriteHeader(http.StatusOK)
@@ -253,7 +253,7 @@ func TestHTTPClient_SendRequest(t *testing.T) {
 
 	config := DefaultConfig()
 	config.BaseURL = testServer.URL
-	config.MaxResponseSize = 1024 // 1KB для тестов
+	config.MaxResponseSize = 1024 // 1KB for tests
 
 	client, err := New(config)
 	if err != nil {
@@ -595,7 +595,7 @@ func TestSendRequest_MarshalError(t *testing.T) {
 		t.Fatalf("Failed to create client: %v", err)
 	}
 
-	// Тело, которое нельзя сериализовать
+	// Body that cannot be serialized
 	invalidBody := make(chan int)
 
 	ctx := context.Background()
@@ -614,9 +614,9 @@ func TestSendRequest_MarshalError(t *testing.T) {
 }
 
 func TestSendRequest_NetworkError(t *testing.T) {
-	// Сервер, который закрывается сразу
+	// Server that closes immediately
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Немедленно закрываем соединение
+		// Immediately close the connection
 		hj, ok := w.(http.Hijacker)
 		if !ok {
 			t.Fatal("Cannot hijack connection")
@@ -624,7 +624,7 @@ func TestSendRequest_NetworkError(t *testing.T) {
 		conn, _, _ := hj.Hijack()
 		conn.Close()
 	}))
-	testServer.Close() // Закрываем сразу, чтобы соединение было недоступно
+	testServer.Close() // Close immediately so the connection is unavailable
 
 	config := DefaultConfig()
 	config.BaseURL = testServer.URL
@@ -651,31 +651,31 @@ func TestSendRequest_NetworkError(t *testing.T) {
 func TestWithRetryOptions(t *testing.T) {
 	opts := DefaultRetryOptions
 
-	// Тестируем WithMaxRetries
+	// Test WithMaxRetries
 	WithMaxRetries(5)(&opts)
 	if opts.MaxRetries != 5 {
 		t.Errorf("MaxRetries = %v, want 5", opts.MaxRetries)
 	}
 
-	// Тестируем WithMaxRetries с отрицательным значением
+	// Test WithMaxRetries with negative value
 	WithMaxRetries(-1)(&opts)
 	if opts.MaxRetries != 0 {
 		t.Errorf("MaxRetries with negative = %v, want 0", opts.MaxRetries)
 	}
 
-	// Тестируем WithRetryDelay
+	// Test WithRetryDelay
 	WithRetryDelay(2 * time.Second)(&opts)
 	if opts.RetryDelay != 2*time.Second {
 		t.Errorf("RetryDelay = %v, want 2s", opts.RetryDelay)
 	}
 
-	// Тестируем WithMaxWaitTime
+	// Test WithMaxWaitTime
 	WithMaxWaitTime(60 * time.Second)(&opts)
 	if opts.MaxWaitTime != 60*time.Second {
 		t.Errorf("MaxWaitTime = %v, want 60s", opts.MaxWaitTime)
 	}
 
-	// Тестируем WithRetryOn
+	// Test WithRetryOn
 	WithRetryOn(408, 500)(&opts)
 	if len(opts.RetryOn) != 2 || opts.RetryOn[0] != 408 || opts.RetryOn[1] != 500 {
 		t.Errorf("RetryOn = %v, want [408, 500]", opts.RetryOn)
@@ -683,12 +683,12 @@ func TestWithRetryOptions(t *testing.T) {
 }
 
 func TestSendRequest_ReadBodyError(t *testing.T) {
-	// Сервер, который отправляет неполный ответ
+	// Server that sends an incomplete response
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", "100")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("short response")) // Меньше чем Content-Length
-		// Соединение обрывается
+		w.Write([]byte("short response")) // Less than Content-Length
+		// Connection breaks
 	}))
 	defer testServer.Close()
 

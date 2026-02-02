@@ -3,31 +3,55 @@ package config
 import (
 	"flag"
 	"fmt"
-	"gopkg.in/yaml.v3"
 	"os"
+
+	"gopkg.in/yaml.v3"
 )
 
-const schema = "http"
+const schema = "http" // Default URL scheme for shortened URLs
 
+// LoadConfig loads and merges configuration from multiple sources with precedence:
+// 1. Command-line flags (highest priority)
+// 2. Environment variables
+// 3. YAML configuration file
+// 4. Default values (lowest priority)
+//
+// Parameters:
+//   - configPath: Path to YAML configuration file (optional)
+//
+// Returns:
+//   - *Config: Fully resolved configuration with defaults filled in
+//   - error: If YAML parsing fails
+//
+// Configuration sources precedence (highest to lowest):
+//  1. Command-line flags
+//  2. Environment variables
+//  3. YAML configuration file
+//  4. Default values
+//
+// The function also ensures all required fields have sensible defaults.
 func LoadConfig(configPath string) (*Config, error) {
 	config := &Config{}
 
+	// Load from YAML file if exists
 	if data, err := os.ReadFile(configPath); err == nil {
 		if err = yaml.Unmarshal(data, config); err != nil {
-			return nil, fmt.Errorf("ошибка парсинга YAML: %w", err)
+			return nil, fmt.Errorf("YAML parsing error: %w", err)
 		}
 	}
 
+	// Define command-line flags
 	var flagServerAddr, flagBaseURL, flagFileStoragePath, flagDataBaseDSN, flagAuditFile, flagAuditURL string
-	flag.StringVar(&flagServerAddr, "a", "", "Порт для запуска сервера")
-	flag.StringVar(&flagBaseURL, "b", "", "Базовый адрес результирующего сокращённого URL")
-	flag.StringVar(&flagDataBaseDSN, "d", "", "user=postgres password=secret host=localhost port=5432 database=pgx_test sslmode=disable")
-	flag.StringVar(&flagFileStoragePath, "f", "", "Путь до файла хранилища")
-	flag.StringVar(&flagAuditFile, "audit-file", "", "Путь к файлу-приёмнику, в который сохраняются логи аудита.")
-	flag.StringVar(&flagAuditURL, "audit-url", "", "Полный URL удаленного сервера-приёмника, куда отправляются логи аудита")
+	flag.StringVar(&flagServerAddr, "a", "", "Port for server startup")
+	flag.StringVar(&flagBaseURL, "b", "", "Base address for shortened URLs")
+	flag.StringVar(&flagDataBaseDSN, "d", "", "PostgreSQL connection string (user=postgres password=secret host=localhost port=5432 database=pgx_test sslmode=disable)")
+	flag.StringVar(&flagFileStoragePath, "f", "", "Path to file storage")
+	flag.StringVar(&flagAuditFile, "audit-file", "", "Path to audit log file")
+	flag.StringVar(&flagAuditURL, "audit-url", "", "Full URL of remote audit log receiver")
 
 	flag.Parse()
 
+	// Apply command-line flags (highest priority)
 	if flagServerAddr != "" {
 		config.ServerAddr = flagServerAddr
 	}
@@ -44,6 +68,7 @@ func LoadConfig(configPath string) (*Config, error) {
 		config.AuditURL = flagAuditURL
 	}
 
+	// Apply environment variables (medium priority)
 	if env := os.Getenv("BASE_URL"); env != "" {
 		config.BaseURL = env
 	}
@@ -63,6 +88,7 @@ func LoadConfig(configPath string) (*Config, error) {
 		config.AuditURL = env
 	}
 
+	// Set defaults for empty fields (lowest priority)
 	if config.DatabaseDSN == "" {
 		config.DatabaseDSN = "user=postgres password=postgres host=localhost port=5432 database=pgx_test sslmode=disable"
 	}

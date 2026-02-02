@@ -15,7 +15,8 @@ import (
 	"go.uber.org/zap"
 )
 
-// FileStorage интерфейс для хранения URL
+// FileStorage interface defines operations for URL storage with file-based persistence.
+// It provides methods for CRUD operations on shortened URLs with memory caching.
 type FileStorage interface {
 	Save(userID, correlationID, key, url string) error
 	Get(key string) (*entity.ShortURL, bool, error)
@@ -29,17 +30,27 @@ type FileStorage interface {
 	BatchSave(ctx context.Context, in []entity.ShortURL) error
 }
 
-// CachedFileStorage хранит URL в файле с in-memory кэшем
+// cachedFileStorage implements FileStorage with file persistence and in-memory caching.
+// It uses append-only JSONL file format for durability and multiple in-memory indexes
+// for fast lookups. This implementation supports logical deletion (soft delete).
 type cachedFileStorage struct {
-	pathDB           string
-	mu               sync.RWMutex
-	cache            map[string]*entity.ShortURL   // Кэш в памяти: shortCode -> ShortURL
-	cacheByID        map[string]*entity.ShortURL   // Кэш в памяти: id -> ShortURL
-	originalURLIndex map[string]*entity.ShortURL   // Индекс по оригинальному URL
-	userIDIndex      map[string][]*entity.ShortURL // Индекс по user_id
+	pathDB           string                        // Path to the storage file
+	mu               sync.RWMutex                  // Mutex for concurrent access
+	cache            map[string]*entity.ShortURL   // In-memory cache: shortCode -> ShortURL
+	cacheByID        map[string]*entity.ShortURL   // In-memory cache: id -> ShortURL
+	originalURLIndex map[string]*entity.ShortURL   // Index by original URL (active records only)
+	userIDIndex      map[string][]*entity.ShortURL // Index by user_id (all records)
 }
 
-// NewCachedFileStorage создает новый экземпляр CachedFileStorage
+// NewCachedFileStorage creates a new instance of cachedFileStorage.
+// It initializes the storage by loading existing data from the file into memory caches.
+//
+// Parameters:
+//   - path: File system path for storing URL data
+//
+// Returns:
+//   - FileStorage: Initialized file storage instance
+//   - error: If file cannot be opened or data cannot be loaded
 func NewCachedFileStorage(path string) (FileStorage, error) {
 	storage := &cachedFileStorage{
 		pathDB:           path,
@@ -49,7 +60,7 @@ func NewCachedFileStorage(path string) (FileStorage, error) {
 		userIDIndex:      make(map[string][]*entity.ShortURL),
 	}
 
-	// Восстанавливаем сохраненные данные из файла в кэш при инициализации
+	// Restore saved data from file to cache during initialization
 	if err := storage.loadCacheFromFile(); err != nil {
 		return nil, fmt.Errorf("failed to load cache from file: %w", err)
 	}
@@ -57,7 +68,11 @@ func NewCachedFileStorage(path string) (FileStorage, error) {
 	return storage, nil
 }
 
-// loadCacheFromFile загрузка данных из файла в кэш
+// loadCacheFromFile loads data from the storage file into in-memory caches.
+// It reads the JSONL file line by line and rebuilds all indexes.
+//
+// Returns:
+//   - error: If file cannot be read or contains invalid JSON
 func (s *cachedFileStorage) loadCacheFromFile() error {
 	file, err := os.OpenFile(s.pathDB, os.O_RDONLY|os.O_CREATE, 0644)
 	if err != nil {
@@ -70,7 +85,7 @@ func (s *cachedFileStorage) loadCacheFromFile() error {
 		}
 	}(file)
 
-	// Проверяем, пуст ли файл
+	// Check if file is empty
 	info, err := file.Stat()
 	if err != nil {
 		return fmt.Errorf("error getting file info: %w", err)
@@ -85,7 +100,7 @@ func (s *cachedFileStorage) loadCacheFromFile() error {
 		lineNumber++
 		line := scanner.Bytes()
 		if len(line) == 0 {
-			continue // Пропускаем пустые строки
+			continue // Skip empty lines
 		}
 
 		var record entity.ShortURL
@@ -97,7 +112,7 @@ func (s *cachedFileStorage) loadCacheFromFile() error {
 			continue
 		}
 
-		// Загружаем ВСЕ записи, включая неактивные
+		// Load ALL records, including inactive ones
 		s.addToCacheAndIndexes(&record)
 	}
 
@@ -108,26 +123,30 @@ func (s *cachedFileStorage) loadCacheFromFile() error {
 	return nil
 }
 
-// addToCacheAndIndexes добавляет запись во все кэши и индексы
+// addToCacheAndIndexes adds a record to all caches and indexes.
+// It updates the main cache, ID cache, original URL index, and user ID index.
+//
+// Parameters:
+//   - record: The ShortURL record to add to caches
 func (s *cachedFileStorage) addToCacheAndIndexes(record *entity.ShortURL) {
 	s.cache[record.ShortCode] = record
 	s.cacheByID[record.ID] = record
 
-	// В индекс по оригинальному URL добавляем только активные записи
+	// Add to original URL index only for active records
 	if record.IsActive {
 		s.originalURLIndex[record.OriginalURL] = record
 	}
 
-	// В индекс по user_id добавляем все записи, но фильтруем по статусу в методах поиска
+	// Add to user_id index for all records, but filter by status in search methods
 	if _, exists := s.userIDIndex[record.UserID]; !exists {
 		s.userIDIndex[record.UserID] = make([]*entity.ShortURL, 0)
 	}
 
-	// Проверяем, нет ли уже этой записи в индексе
+	// Check if this record already exists in the index
 	found := false
 	for i, existingRecord := range s.userIDIndex[record.UserID] {
 		if existingRecord.ID == record.ID {
-			// Обновляем существующую запись
+			// Update existing record
 			s.userIDIndex[record.UserID][i] = record
 			found = true
 			break
@@ -139,25 +158,39 @@ func (s *cachedFileStorage) addToCacheAndIndexes(record *entity.ShortURL) {
 	}
 }
 
-// removeFromIndexes удаляет запись из индексов (но оставляет в основном кэше для логического удаления)
+// removeFromIndexes removes a record from indexes (but keeps it in main cache for logical deletion).
+// This is used when marking records as inactive.
+//
+// Parameters:
+//   - record: The ShortURL record to remove from indexes
 func (s *cachedFileStorage) removeFromIndexes(record *entity.ShortURL) {
-	// Удаляем из индекса по оригинальному URL
+	// Remove from original URL index
 	delete(s.originalURLIndex, record.OriginalURL)
 
-	// Из индекса по user_id не удаляем, но будем фильтровать в методах поиска
+	// Do not remove from user_id index, but filter in search methods
 }
 
-// Save сохраняет URL-маппинг в файл и обновляет кэш
+// Save saves a URL mapping to file and updates the cache.
+// It checks for duplicate URLs and generates a unique UUID for the record.
+//
+// Parameters:
+//   - userID: ID of the user creating the URL
+//   - correlationID: Correlation ID for batch operations
+//   - key: Short code for the URL
+//   - url: Original URL to shorten
+//
+// Returns:
+//   - error: If URL already exists or file write fails
 func (s *cachedFileStorage) Save(userID, correlationID, key, url string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Проверяем, не существует ли уже такой оригинальный URL (только среди активных)
+	// Check if the original URL already exists (active records only)
 	if existing, exists := s.originalURLIndex[url]; exists {
 		return fmt.Errorf("URL already exists: %s", existing.ShortCode)
 	}
 
-	// Генерируем UUID v4
+	// Generate UUID v4
 	id := uuid.New().String()
 
 	record := &entity.ShortURL{
@@ -169,17 +202,25 @@ func (s *cachedFileStorage) Save(userID, correlationID, key, url string) error {
 		CreatedAt:     time.Now(),
 		IsActive:      true,
 		ClickCount:    0,
-		ExpiresAt:     sql.NullTime{Valid: false}, // По умолчанию срок действия не установлен
+		ExpiresAt:     sql.NullTime{Valid: false}, // No expiration by default
 	}
 
-	// Обновляем кэш и индексы
+	// Update cache and indexes
 	s.addToCacheAndIndexes(record)
 
-	// Сохраняем в файл в формате JSONL
+	// Save to file in JSONL format
 	return s.appendRecordToFile(record)
 }
 
-// BatchSave сохраняет URL-маппинг с ID в файл и обновляет кэш
+// BatchSave saves multiple URL mappings with IDs to file and updates the cache.
+// It processes each URL individually and skips duplicates.
+//
+// Parameters:
+//   - ctx: Context for timeout and cancellation
+//   - in: Slice of ShortURL entities to save
+//
+// Returns:
+//   - error: If file write fails
 func (s *cachedFileStorage) BatchSave(ctx context.Context, in []entity.ShortURL) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -189,7 +230,7 @@ func (s *cachedFileStorage) BatchSave(ctx context.Context, in []entity.ShortURL)
 		return ctx.Err()
 	default:
 		for _, i := range in {
-			// Проверяем, не существует ли уже такой оригинальный URL (только среди активных)
+			// Check if the original URL already exists (active records only)
 			if existing, exists := s.originalURLIndex[i.OriginalURL]; exists {
 				zap.L().Warn("URL already exists, skipping",
 					zap.String("original_url", i.OriginalURL),
@@ -197,7 +238,7 @@ func (s *cachedFileStorage) BatchSave(ctx context.Context, in []entity.ShortURL)
 				continue
 			}
 
-			// Генерируем UUID v4
+			// Generate UUID v4
 			id := uuid.New().String()
 			record := &entity.ShortURL{
 				ID:            id,
@@ -211,7 +252,7 @@ func (s *cachedFileStorage) BatchSave(ctx context.Context, in []entity.ShortURL)
 				ExpiresAt:     sql.NullTime{Valid: false},
 			}
 
-			// Обновляем кэш и индексы
+			// Update cache and indexes
 			s.addToCacheAndIndexes(record)
 
 			err := s.appendRecordToFile(record)
@@ -224,7 +265,14 @@ func (s *cachedFileStorage) BatchSave(ctx context.Context, in []entity.ShortURL)
 	return nil
 }
 
-// appendRecordToFile добавляет запись в конец файла в формате JSONL
+// appendRecordToFile appends a record to the end of the file in JSONL format.
+// This implements an append-only log for durability.
+//
+// Parameters:
+//   - record: The ShortURL record to append
+//
+// Returns:
+//   - error: If file cannot be opened or write fails
 func (s *cachedFileStorage) appendRecordToFile(record *entity.ShortURL) error {
 	file, err := os.OpenFile(s.pathDB, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
@@ -249,7 +297,16 @@ func (s *cachedFileStorage) appendRecordToFile(record *entity.ShortURL) error {
 	return nil
 }
 
-// Get получает URL по ключу из кэша (возвращает записи с любым статусом IsActive)
+// Get retrieves a URL by its short code from the cache.
+// Returns records with any IsActive status.
+//
+// Parameters:
+//   - key: Short code to look up
+//
+// Returns:
+//   - *entity.ShortURL: Found URL record (nil if not found)
+//   - bool: True if record was found
+//   - error: Always nil, present for interface compatibility
 func (s *cachedFileStorage) Get(key string) (*entity.ShortURL, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -261,7 +318,16 @@ func (s *cachedFileStorage) Get(key string) (*entity.ShortURL, bool, error) {
 	return record, true, nil
 }
 
-// GetByID получает запись по ID из кэша (возвращает записи с любым статусом IsActive)
+// GetByID retrieves a record by its ID from the cache.
+// Returns records with any IsActive status.
+//
+// Parameters:
+//   - id: UUID of the record to look up
+//
+// Returns:
+//   - *entity.ShortURL: Found URL record (nil if not found)
+//   - bool: True if record was found
+//   - error: Always nil, present for interface compatibility
 func (s *cachedFileStorage) GetByID(id string) (*entity.ShortURL, bool, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -273,7 +339,14 @@ func (s *cachedFileStorage) GetByID(id string) (*entity.ShortURL, bool, error) {
 	return record, true, nil
 }
 
-// Delete помечает запись как неактивную (логическое удаление)
+// Delete marks a record as inactive (logical deletion).
+// It updates indexes and appends the change to the file.
+//
+// Parameters:
+//   - shortURL: Short code of the record to delete
+//
+// Returns:
+//   - error: If record not found or file write fails
 func (s *cachedFileStorage) Delete(shortURL string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -283,15 +356,22 @@ func (s *cachedFileStorage) Delete(shortURL string) error {
 		return fmt.Errorf("record not found with short URL: %s", shortURL)
 	}
 
-	// Логическое удаление
+	// Logical deletion
 	record.IsActive = false
 	s.removeFromIndexes(record)
 
-	// Записываем изменение в файл (append-only)
+	// Write change to file (append-only)
 	return s.appendRecordToFile(record)
 }
 
-// DeleteByID помечает запись как неактивную по ID (логическое удаление)
+// DeleteByID marks a record as inactive by its ID (logical deletion).
+// It updates indexes and appends the change to the file.
+//
+// Parameters:
+//   - id: UUID of the record to delete
+//
+// Returns:
+//   - error: If record not found or file write fails
 func (s *cachedFileStorage) DeleteByID(id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -301,37 +381,51 @@ func (s *cachedFileStorage) DeleteByID(id string) error {
 		return fmt.Errorf("record not found with id: %s", id)
 	}
 
-	// Логическое удаление
+	// Logical deletion
 	record.IsActive = false
 	s.removeFromIndexes(record)
 
-	// Записываем изменение в файл (append-only)
+	// Write change to file (append-only)
 	return s.appendRecordToFile(record)
 }
 
-// FindByOriginalURL ищет запись по оригинальному URL в индексе (только активные)
+// FindByOriginalURL searches for a record by original URL in the index (active records only).
+//
+// Parameters:
+//   - originalURL: Original URL to search for
+//
+// Returns:
+//   - *entity.ShortURL: Found URL record (nil if not found)
+//   - error: Always nil, present for interface compatibility
 func (s *cachedFileStorage) FindByOriginalURL(originalURL string) (*entity.ShortURL, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	record, exists := s.originalURLIndex[originalURL]
 	if !exists {
-		return nil, nil // Возвращаем nil вместо ошибки
+		return nil, nil // Return nil instead of error
 	}
 	return record, nil
 }
 
-// FindByUserID ищет все записи по user_id в индексе (только активные)
+// FindByUserID searches for all records by user_id in the index (active records only).
+//
+// Parameters:
+//   - userID: User ID to search for
+//
+// Returns:
+//   - []entity.ShortURL: Slice of active URL records for the user
+//   - error: Always nil, present for interface compatibility
 func (s *cachedFileStorage) FindByUserID(userID string) ([]entity.ShortURL, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	records, exists := s.userIDIndex[userID]
 	if !exists {
-		return []entity.ShortURL{}, nil // Возвращаем пустой срез вместо ошибки
+		return []entity.ShortURL{}, nil // Return empty slice instead of error
 	}
 
-	// Фильтруем только активные записи
+	// Filter only active records
 	var activeRecords []entity.ShortURL
 	for _, record := range records {
 		if record.IsActive {
@@ -342,52 +436,61 @@ func (s *cachedFileStorage) FindByUserID(userID string) ([]entity.ShortURL, erro
 	return activeRecords, nil
 }
 
-// SetDeletedByUserIDAndURLs устанавливает флаг IsActive для конкретных URL пользователя
+// SetDeletedByUserIDAndURLs sets the IsActive flag for specific URLs of a user.
+// This implements batch logical deletion or restoration.
+//
+// Parameters:
+//   - userID: User ID whose URLs to update
+//   - shortURLs: Slice of short codes to update
+//   - deleted: True to mark as deleted (inactive), false to restore (active)
+//
+// Returns:
+//   - error: If user not found or file write fails
 func (s *cachedFileStorage) SetDeletedByUserIDAndURLs(userID string, shortURLs []string, deleted bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	var updatedRecords []*entity.ShortURL
 
-	// Получаем все записи пользователя
+	// Get all user records
 	userRecords, exists := s.userIDIndex[userID]
 	if !exists {
 		return fmt.Errorf("no records found for user: %s", userID)
 	}
 
-	// Создаем карту для быстрого поиска
+	// Create a map for quick lookup
 	urlMap := make(map[string]*entity.ShortURL)
 	for _, record := range userRecords {
 		urlMap[record.ShortCode] = record
 	}
 
-	// Обновляем только указанные URL
+	// Update only specified URLs
 	for _, shortURL := range shortURLs {
 		record, e := urlMap[shortURL]
 		if !e {
-			continue // Пропускаем несуществующие URL
+			continue // Skip non-existent URLs
 		}
 
-		// Если флаг уже установлен в нужное значение, пропускаем
+		// Skip if flag is already set to the desired value
 		if record.IsActive == !deleted {
 			continue
 		}
 
-		// Устанавливаем флаг (deleted = true означает IsActive = false)
+		// Set flag (deleted = true means IsActive = false)
 		record.IsActive = !deleted
 
-		// Обновляем индексы
+		// Update indexes
 		if deleted {
 			s.removeFromIndexes(record)
 		} else {
-			// При восстановлении добавляем обратно в индексы
+			// When restoring, add back to indexes
 			s.originalURLIndex[record.OriginalURL] = record
 		}
 
 		updatedRecords = append(updatedRecords, record)
 	}
 
-	// Записываем изменения в файл
+	// Write changes to file
 	for _, record := range updatedRecords {
 		if err := s.appendRecordToFile(record); err != nil {
 			return fmt.Errorf("failed to update record in file: %w", err)
@@ -397,7 +500,11 @@ func (s *cachedFileStorage) SetDeletedByUserIDAndURLs(userID string, shortURLs [
 	return nil
 }
 
-// CompactFile выполняет сжатие файла, удаляя логически удаленные записи
+// CompactFile compresses the storage file by removing logically deleted records.
+// This reduces file size by eliminating inactive records from disk.
+//
+// Returns:
+//   - error: If file operations fail
 func (s *cachedFileStorage) CompactFile() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -409,12 +516,12 @@ func (s *cachedFileStorage) CompactFile() error {
 	}
 	defer func() {
 		tempFile.Close()
-		os.Remove(tempPath) // Удаляем временный файл в случае ошибки
+		os.Remove(tempPath) // Clean up temp file on error
 	}()
 
 	writer := bufio.NewWriter(tempFile)
 
-	// Записываем все записи (включая неактивные)
+	// Write all records (including inactive)
 	for _, record := range s.cache {
 		data, err := json.Marshal(record)
 		if err != nil {
@@ -433,7 +540,7 @@ func (s *cachedFileStorage) CompactFile() error {
 		return fmt.Errorf("error closing temp file: %w", err)
 	}
 
-	// Заменяем оригинальный файл сжатым
+	// Replace original file with compacted version
 	if err := os.Rename(tempPath, s.pathDB); err != nil {
 		return fmt.Errorf("error replacing original file: %w", err)
 	}
@@ -441,7 +548,16 @@ func (s *cachedFileStorage) CompactFile() error {
 	return nil
 }
 
-// Stats возвращает статистику хранилища
+// Stats returns storage statistics including record counts and file information.
+//
+// Returns:
+//   - map[string]interface{}: Statistics with keys:
+//   - total_records: Total number of records in storage
+//   - active_records: Number of active (non-deleted) records
+//   - deleted_records: Number of logically deleted records
+//   - file_path: Path to storage file
+//   - file_size_bytes: Size of storage file in bytes
+//   - unique_users: Number of unique users with records
 func (s *cachedFileStorage) Stats() map[string]interface{} {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -452,7 +568,7 @@ func (s *cachedFileStorage) Stats() map[string]interface{} {
 		fileSize = fileInfo.Size()
 	}
 
-	// Считаем только активные записи
+	// Count only active records
 	activeRecords := 0
 	for _, record := range s.cache {
 		if record.IsActive {

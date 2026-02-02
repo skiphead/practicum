@@ -22,11 +22,17 @@ const (
 	keyUserID contextKey = "user_id"
 )
 
+// SessionClaims represents JWT claims for session management.
+// It extends jwt.RegisteredClaims with a UserID field.
 type SessionClaims struct {
 	jwt.RegisteredClaims
 	UserID string `json:"user_id"`
 }
 
+// sessionMiddleware is an HTTP middleware that handles user session management.
+// It checks for a valid session cookie, validates JWT tokens, and creates new sessions when needed.
+// The middleware extracts the UserID from the JWT token and stores it in the request context.
+// If no valid session exists, it creates a new one with a generated UserID.
 func (h *URLHandler) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var userID string
@@ -68,6 +74,10 @@ func (h *URLHandler) sessionMiddleware(next http.Handler) http.Handler {
 	})
 }
 
+// createNewSession generates a new session for a user.
+// It creates a unique UserID, generates a JWT token with session claims,
+// and sets an HTTP cookie with the token.
+// Returns the generated UserID.
 func (h *URLHandler) createNewSession(w http.ResponseWriter) string {
 	userID := uuid.New().String()
 
@@ -99,6 +109,8 @@ func (h *URLHandler) createNewSession(w http.ResponseWriter) string {
 	return userID
 }
 
+// getUserIDFromContext extracts the UserID from the request context.
+// Returns an empty string if the UserID is not found or cannot be cast to string.
 func (h *URLHandler) getUserIDFromContext(ctx context.Context) string {
 	if userID, ok := ctx.Value(keyUserID).(string); ok {
 		return userID

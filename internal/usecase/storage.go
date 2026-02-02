@@ -13,10 +13,14 @@ import (
 	"go.uber.org/zap"
 )
 
+// Batch size for database operations to optimize performance.
 const batchSize = 100
 
+// ErrDuplicateURL indicates that a URL already exists in the system.
 var ErrDuplicateURL = fmt.Errorf("duplicate URL")
 
+// URLUseCase defines the business logic interface for URL shortening operations.
+// It provides methods for URL management, batch operations, and fallback handling.
 type URLUseCase interface {
 	Ping(ctx context.Context) error
 	IsDuplicateError(err error) bool
@@ -28,14 +32,24 @@ type URLUseCase interface {
 	Deleted(ctx context.Context, shortCodes []string, userID string) error
 }
 
-// urlUseCase реализует бизнес-логику работы с сокращенными URL
+// urlUseCase implements business logic for shortened URL operations.
+// It provides fallback mechanisms between database and file storage.
 type urlUseCase struct {
-	baseURL     string
-	fileStorage repository.FileStorage
-	storageRepo repository.URLRepository
+	baseURL     string                   // Base URL for shortened links
+	fileStorage repository.FileStorage   // Fallback file storage
+	storageRepo repository.URLRepository // Primary database storage
 }
 
-// NewStorageUseCase создает новый экземпляр usecase для работы с хранилищем
+// NewStorageUseCase creates a new URL use case instance.
+// It sets up the business logic layer with both primary and fallback storage.
+//
+// Parameters:
+//   - baseURL: Base URL for constructing shortened URLs
+//   - fileStorage: Fallback file storage implementation
+//   - urlRepository: Primary database repository implementation
+//
+// Returns:
+//   - URLUseCase: Initialized use case with configured storage
 func NewStorageUseCase(baseURL string,
 	fileStorage repository.FileStorage,
 	urlRepository repository.URLRepository) URLUseCase {
@@ -47,33 +61,74 @@ func NewStorageUseCase(baseURL string,
 	}
 }
 
-// Ping проверяет доступность основного хранилища
+// Ping checks the availability of the primary storage backend.
+// This is used for health checks and availability determination.
+//
+// Parameters:
+//   - ctx: Context for timeout and cancellation
+//
+// Returns:
+//   - error: Connection error if primary storage is unavailable
 func (uc *urlUseCase) Ping(ctx context.Context) error {
 	return uc.storageRepo.Ping(ctx)
 }
 
-// isDatabaseAvailable проверяет, доступна ли база данных
+// isDatabaseAvailable checks if the primary database storage is accessible.
+// Used to determine whether to use primary storage or fallback.
+//
+// Parameters:
+//   - ctx: Context for timeout and cancellation
+//
+// Returns:
+//   - bool: True if database is accessible, false otherwise
 func (uc *urlUseCase) isDatabaseAvailable(ctx context.Context) bool {
 	return uc.storageRepo.Ping(ctx) == nil
 }
 
-// buildShortURL создает полный короткий URL
+// buildShortURL constructs a complete shortened URL from a short code.
+//
+// Parameters:
+//   - shortCode: Unique identifier for the shortened URL
+//
+// Returns:
+//   - string: Complete shortened URL in format "baseURL/shortCode"
 func (uc *urlUseCase) buildShortURL(shortCode string) string {
 	return fmt.Sprintf("%s/%s", uc.baseURL, shortCode)
 }
 
-// IsDuplicateError унифицированная проверка на ошибку дублирования
+// IsDuplicateError provides unified duplicate error checking.
+// It delegates to the repository's duplicate detection logic.
+//
+// Parameters:
+//   - err: Error to check for duplicate violations
+//
+// Returns:
+//   - bool: True if the error represents a duplicate violation
 func (uc *urlUseCase) IsDuplicateError(err error) bool {
-
 	return uc.storageRepo.IsDuplicateError(err)
 }
 
-// Save сохраняет оригинальный URL и возвращает сокращенную версию
+// Save creates a shortened URL for an original URL with user ownership.
+// It automatically falls back to file storage if database is unavailable.
+//
+// Parameters:
+//   - ctx: Context for timeout and cancellation
+//   - originalURL: URL to be shortened
+//   - userID: ID of the user creating the URL
+//
+// Returns:
+//   - *entity.ShortURL: Created or existing shortened URL
+//   - error: Storage or duplicate error if creation fails
+//
+// Behavior:
+//  1. Checks database availability
+//  2. Falls back to file storage if database is unavailable
+//  3. Handles duplicate URLs by returning existing entries
 func (uc *urlUseCase) Save(ctx context.Context, originalURL, userID string) (*entity.ShortURL, error) {
 	shortCode := utils.GenerateRandomKey()
 
 	if !uc.isDatabaseAvailable(ctx) {
-		// Используем файловое хранилище как fallback
+		// Use file storage as fallback
 		if err := uc.fileStorage.Save(userID, "", shortCode, originalURL); err != nil {
 			return nil, fmt.Errorf("save to file storage: %w", err)
 		}
@@ -84,7 +139,7 @@ func (uc *urlUseCase) Save(ctx context.Context, originalURL, userID string) (*en
 		}, nil
 	}
 
-	// Используем основное хранилище (базу данных)
+	// Use primary storage (database)
 	shortURL, err := uc.storageRepo.Create(ctx, userID, shortCode, originalURL)
 	if uc.storageRepo.IsDuplicateError(err) {
 		duplicate, errGet := uc.storageRepo.GetByOriginalURL(ctx, originalURL)
@@ -102,10 +157,19 @@ func (uc *urlUseCase) Save(ctx context.Context, originalURL, userID string) (*en
 	return shortURL, nil
 }
 
-// Get возвращает оригинальный URL по короткому коду
+// Get retrieves a shortened URL by its short code.
+// It falls back to file storage if database is unavailable.
+//
+// Parameters:
+//   - ctx: Context for timeout and cancellation
+//   - shortCode: Unique short code identifier
+//
+// Returns:
+//   - *entity.ShortURL: Retrieved URL entity
+//   - error: ErrNotFound if URL doesn't exist, or storage error
 func (uc *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortURL, error) {
 	if !uc.isDatabaseAvailable(ctx) {
-		// Используем файловое хранилище как fallback
+		// Use file storage as fallback
 		resp, exists, err := uc.fileStorage.Get(shortCode)
 		if err != nil {
 			return nil, fmt.Errorf("get from file storage: %w", err)
@@ -117,7 +181,7 @@ func (uc *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortU
 		return resp, nil
 	}
 
-	// Используем основное хранилище (базу данных)
+	// Use primary storage (database)
 	shortURL, err := uc.storageRepo.Get(ctx, shortCode)
 	if err != nil {
 		return nil, fmt.Errorf("get from database: %w", err)
@@ -126,11 +190,19 @@ func (uc *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortU
 	return shortURL, nil
 }
 
-// GetByUserID возвращает список коротких url по id пользователя
+// GetByUserID retrieves all shortened URLs for a specific user.
+// It falls back to file storage if database is unavailable.
+//
+// Parameters:
+//   - ctx: Context for timeout and cancellation
+//   - userID: User ID to search for
+//
+// Returns:
+//   - []entity.ShortURL: Slice of URL entities belonging to the user
+//   - error: Storage error if retrieval fails
 func (uc *urlUseCase) GetByUserID(ctx context.Context, userID string) ([]entity.ShortURL, error) {
-
 	if !uc.isDatabaseAvailable(ctx) {
-		// Используем файловое хранилище как fallback
+		// Use file storage as fallback
 		resp, err := uc.fileStorage.FindByUserID(userID)
 		if err != nil {
 			return nil, fmt.Errorf("get from file storage: %w", err)
@@ -139,7 +211,7 @@ func (uc *urlUseCase) GetByUserID(ctx context.Context, userID string) ([]entity.
 		return resp, nil
 	}
 
-	// Используем основное хранилище (базу данных)
+	// Use primary storage (database)
 	shortURL, err := uc.storageRepo.GetByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("get from database: %w", err)
@@ -148,8 +220,17 @@ func (uc *urlUseCase) GetByUserID(ctx context.Context, userID string) ([]entity.
 	return shortURL, nil
 }
 
+// FindDuplicateURLs identifies which URLs from a batch already exist in storage.
+// This prevents duplicate URL creation in batch operations.
+//
+// Parameters:
+//   - ctx: Context for timeout and cancellation
+//   - urls: Batch of URL requests to check
+//
+// Returns:
+//   - []entity.BatchShortenResponse: Responses for existing URLs
+//   - error: Storage error if lookup fails
 func (uc *urlUseCase) FindDuplicateURLs(ctx context.Context, urls []entity.BatchShortenRequest) ([]entity.BatchShortenResponse, error) {
-
 	response := make([]entity.BatchShortenResponse, 0, len(urls))
 
 	createdURLs, err := uc.storageRepo.FindDuplicateURLs(ctx, urls)
@@ -167,7 +248,19 @@ func (uc *urlUseCase) FindDuplicateURLs(ctx context.Context, urls []entity.Batch
 	return response, nil
 }
 
-// BatchSave сохраняет пакет URL и возвращает сокращенные версии
+// BatchSave creates multiple shortened URLs in a single operation.
+// It falls back to file storage if database is unavailable.
+//
+// Parameters:
+//   - ctx: Context for timeout and cancellation
+//   - urls: Batch of URL requests to process
+//   - userID: ID of the user creating the URLs
+//
+// Returns:
+//   - []entity.BatchShortenResponse: Responses for created URLs
+//   - error: Storage error if batch creation fails
+//
+// Note: Each URL gets a unique correlation ID to match requests with responses.
 func (uc *urlUseCase) BatchSave(ctx context.Context, urls []entity.BatchShortenRequest, userID string) ([]entity.BatchShortenResponse, error) {
 	if len(urls) == 0 {
 		return []entity.BatchShortenResponse{}, nil
@@ -176,7 +269,7 @@ func (uc *urlUseCase) BatchSave(ctx context.Context, urls []entity.BatchShortenR
 	response := make([]entity.BatchShortenResponse, 0, len(urls))
 
 	if !uc.isDatabaseAvailable(ctx) {
-		// Используем файловое хранилище как fallback
+		// Use file storage as fallback
 		for _, item := range urls {
 			code := utils.GenerateRandomKey()
 			if err := uc.fileStorage.Save(userID, item.CorrelationID, code, item.OriginalURL); err != nil {
@@ -191,11 +284,9 @@ func (uc *urlUseCase) BatchSave(ctx context.Context, urls []entity.BatchShortenR
 		return response, nil
 	}
 
-	// Используем основное хранилище (базу данных)
-
+	// Use primary storage (database)
 	createdURLs, err := uc.storageRepo.CreateBatch(ctx, userID, urls, batchSize)
 	if err != nil {
-
 		return nil, fmt.Errorf("create batch urls database: %w", err)
 	}
 
@@ -209,6 +300,21 @@ func (uc *urlUseCase) BatchSave(ctx context.Context, urls []entity.BatchShortenR
 	return response, nil
 }
 
+// Deleted performs logical deletion of URLs for a specific user.
+// It processes deletions asynchronously in the background for better performance.
+//
+// Parameters:
+//   - ctx: Context for timeout and cancellation
+//   - shortCodes: Short codes to mark as deleted
+//   - userID: User ID for authorization
+//
+// Returns:
+//   - error: Validation error if inputs are invalid
+//
+// Behavior:
+//  1. For file storage: Synchronous deletion
+//  2. For database: Asynchronous batch deletion with fan-out/fan-in pattern
+//  3. Returns immediately for database operations (fire-and-forget)
 func (uc *urlUseCase) Deleted(ctx context.Context, shortCodes []string, userID string) error {
 	if len(shortCodes) == 0 {
 		return fmt.Errorf("empty short code")
@@ -217,7 +323,7 @@ func (uc *urlUseCase) Deleted(ctx context.Context, shortCodes []string, userID s
 		return fmt.Errorf("empty user ID")
 	}
 
-	// Если база недоступна, синхронно работаем с файловым хранилищем
+	// If database is unavailable, work synchronously with file storage
 	if !uc.isDatabaseAvailable(ctx) {
 		if err := uc.fileStorage.SetDeletedByUserIDAndURLs(userID, shortCodes, true); err != nil {
 			return fmt.Errorf("delete shortCode: %w", err)
@@ -225,18 +331,30 @@ func (uc *urlUseCase) Deleted(ctx context.Context, shortCodes []string, userID s
 		return nil
 	}
 
-	// Запускаем фоновую обработку базы данных
+	// Start background processing for database deletion
 	go uc.processDeletionInBackground(shortCodes, userID)
 
 	return nil
 }
 
+// processDeletionInBackground asynchronously processes URL deletions in batches.
+// It uses a fan-out/fan-in pattern for parallel processing of deletion batches.
+//
+// Parameters:
+//   - shortCodes: Short codes to delete
+//   - userID: User ID for authorization
+//
+// This method:
+// 1. Splits short codes into batches
+// 2. Processes batches concurrently in goroutines
+// 3. Collects and logs results
+// 4. Implements 30-second timeout for the entire operation
 func (uc *urlUseCase) processDeletionInBackground(shortCodes []string, userID string) {
-	// Создаем отдельный контекст для фоновой операции
+	// Create separate context for background operation
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Разбиваем на батчи
+	// Split into batches
 	batches := make([][]string, 0, (len(shortCodes)+batchSize-1)/batchSize)
 	for i := 0; i < len(shortCodes); i += batchSize {
 		end := i + batchSize
@@ -246,7 +364,7 @@ func (uc *urlUseCase) processDeletionInBackground(shortCodes []string, userID st
 		batches = append(batches, shortCodes[i:end])
 	}
 
-	// Fan-out: запускаем обработку батчей в отдельных горутинах
+	// Fan-out: start batch processing in separate goroutines
 	results := make(chan struct {
 		noFounds []string
 		err      error
@@ -262,7 +380,7 @@ func (uc *urlUseCase) processDeletionInBackground(shortCodes []string, userID st
 		}(batch)
 	}
 
-	// Fan-in: собираем результаты из всех горутин
+	// Fan-in: collect results from all goroutines
 	var allNoFounds []string
 	var errors []error
 
@@ -275,7 +393,7 @@ func (uc *urlUseCase) processDeletionInBackground(shortCodes []string, userID st
 	}
 	close(results)
 
-	// Логируем результаты фоновой операции
+	// Log background operation results
 	if len(errors) > 0 {
 		zap.L().Error("errors during background deletion",
 			zap.Errors("errors", errors),
