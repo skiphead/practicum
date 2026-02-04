@@ -1,3 +1,6 @@
+// Package audit provides an adapter for sending audit events to multiple destinations.
+// It supports file-based logging and HTTP-based remote logging with batching,
+// asynchronous processing, and graceful error handling for reliable audit trail.
 package audit
 
 import (
@@ -64,6 +67,15 @@ func (c Config) Validate() error {
 	}
 
 	return nil
+}
+
+// Event represents an audit event in the adapter layer.
+// It contains all necessary information for audit trail recording.
+type Event struct {
+	Timestamp int64  `json:"ts"`      // Unix timestamp of the event
+	Action    string `json:"action"`  // Action type (e.g., "shorten", "follow")
+	UserID    string `json:"user_id"` // User identifier
+	URL       string `json:"url"`     // URL involved in the action
 }
 
 // Adapter adapts audit events for delivery to different receivers (file, HTTP).

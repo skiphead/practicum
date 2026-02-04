@@ -292,7 +292,7 @@ func TestFileCreation(t *testing.T) {
 	logger.Close()
 
 	// Проверяем, что файл создан
-	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+	if _, err = os.Stat(testFile); os.IsNotExist(err) {
 		t.Errorf("log file was not created: %s", testFile)
 	}
 
@@ -351,7 +351,7 @@ func TestReopen(t *testing.T) {
 	logger.Close()
 
 	// Проверяем, что новый файл создан и содержит запись
-	if _, err := os.Stat(testFile); os.IsNotExist(err) {
+	if _, err = os.Stat(testFile); os.IsNotExist(err) {
 		t.Errorf("New log file was not created after reopen")
 	}
 

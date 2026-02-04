@@ -88,7 +88,7 @@ func (r *storageRepository) CreateBatch(
 	var allResults []entity.ShortURL
 
 	for start := 0; start < len(requests); start += effectiveBatchSize {
-		end := utils.Min(start+effectiveBatchSize, len(requests))
+		end := Min(start+effectiveBatchSize, len(requests))
 		batch := requests[start:end]
 
 		batchResults, err := r.insertBatch(ctx, tx, userID, batch)

@@ -12,6 +12,20 @@ type Factory struct {
 	mutex    sync.RWMutex        // Mutex for thread-safe operations
 }
 
+// NewFactory creates a new audit adapter factory with the given configuration.
+//
+// Parameters:
+//   - config: Default configuration for adapters created by the factory
+//
+// Returns:
+//   - *Factory: New factory instance ready for use
+func NewFactory(config Config) *Factory {
+	return &Factory{
+		config:   config,
+		adapters: make(map[string]*Adapter),
+	}
+}
+
 // GetAdapter retrieves or creates an audit adapter using the factory's default configuration.
 // This method reuses existing adapters when possible to conserve resources.
 //

@@ -1,3 +1,6 @@
+// Package usecase implements the business logic layer for the URL shortening service.
+// It orchestrates operations between domain entities and repositories, providing
+// fallback mechanisms, batch processing, and transaction management for reliable URL operations.
 package usecase
 
 import (

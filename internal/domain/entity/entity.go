@@ -1,3 +1,6 @@
+// Package entity defines core data structures and business objects for the URL shortening service.
+// It includes request/response models, database entities, and validation logic
+// for maintaining data integrity across the application layers.
 package entity
 
 import (

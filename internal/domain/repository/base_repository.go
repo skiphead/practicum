@@ -1,3 +1,6 @@
+// Package repository provides data access layer implementations for the URL shortening service.
+// It includes PostgreSQL-specific repository with CRUD operations, batch processing,
+// transaction management, and error handling for database interactions.
 package repository
 
 import (

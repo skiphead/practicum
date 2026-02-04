@@ -1,3 +1,7 @@
+// Package audit provides thread-safe audit logging functionality for URL shortening services.
+// It implements JSON Lines format logging with singleton pattern per log file to prevent
+// concurrent write issues. The package supports audit actions for URL shortening and
+// redirection/follow events.
 package audit
 
 import (

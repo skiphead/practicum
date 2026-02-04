@@ -7,6 +7,23 @@ import (
 	"github.com/skiphead/practicum/internal/domain/entity"
 )
 
+// URLRepository aggregates all URL repository interfaces for convenience.
+// This maintains backward compatibility while allowing clients to depend only
+// on the specific interfaces they need.
+type URLRepository interface {
+	HealthChecker
+	ErrorClassifier
+	URLCreator
+	BatchURLCreator
+	URLRetriever
+	URLReverseLookup
+	UserURLRetriever
+	URLUpdater
+	URLDeleter
+	DuplicateFinder
+	BatchStatusUpdater
+}
+
 // Package-level error definitions for repository operations.
 var (
 	// ErrNotFound indicates that a requested resource was not found in the repository.
@@ -14,19 +31,22 @@ var (
 	ErrNotFound = errors.New("not found")
 )
 
-// URLRepository defines the interface for URL storage operations.
-// It provides methods for CRUD operations, batch processing, and duplicate detection
-// for shortened URLs. Implementations can use various storage backends
-// (database, file system, in-memory, etc.).
-type URLRepository interface {
+// HealthChecker defines the interface for checking storage backend health.
+type HealthChecker interface {
 	// Ping checks the health and connectivity of the storage backend.
 	// It verifies that the repository can communicate with its underlying storage.
 	Ping(ctx context.Context) error
+}
 
+// ErrorClassifier defines the interface for error classification.
+type ErrorClassifier interface {
 	// IsDuplicateError determines if an error represents a duplicate key violation.
 	// This is used to identify conflicts when inserting unique records.
 	IsDuplicateError(err error) bool
+}
 
+// URLCreator defines the interface for creating shortened URLs.
+type URLCreator interface {
 	// Create saves a single shortened URL to the repository.
 	// It associates the URL with a user and generates a unique short code.
 	//
@@ -40,7 +60,10 @@ type URLRepository interface {
 	//   - *entity.ShortURL: Created URL entity
 	//   - error: Storage or validation error if creation fails
 	Create(ctx context.Context, userID, shortCode, originalURL string) (*entity.ShortURL, error)
+}
 
+// BatchURLCreator defines the interface for batch URL creation.
+type BatchURLCreator interface {
 	// CreateBatch saves multiple shortened URLs in a batch operation.
 	// It processes URLs efficiently and returns the created entities.
 	//
@@ -54,7 +77,10 @@ type URLRepository interface {
 	//   - []entity.ShortURL: Created URL entities
 	//   - error: Storage or validation error if batch creation fails
 	CreateBatch(ctx context.Context, userID string, in []entity.BatchShortenRequest, batchSize int) ([]entity.ShortURL, error)
+}
 
+// URLRetriever defines the interface for retrieving URLs by short code.
+type URLRetriever interface {
 	// Get retrieves a shortened URL by its short code.
 	// It returns the full URL entity including metadata and usage statistics.
 	//
@@ -66,7 +92,10 @@ type URLRepository interface {
 	//   - *entity.ShortURL: Found URL entity
 	//   - error: ErrNotFound if URL doesn't exist, or storage error
 	Get(ctx context.Context, shortCode string) (*entity.ShortURL, error)
+}
 
+// URLReverseLookup defines the interface for reverse URL lookups.
+type URLReverseLookup interface {
 	// GetByOriginalURL retrieves a shortened URL by its original (long) URL.
 	// This is used for duplicate detection and reverse lookups.
 	//
@@ -78,7 +107,10 @@ type URLRepository interface {
 	//   - *entity.ShortURL: Found URL entity
 	//   - error: ErrNotFound if URL doesn't exist, or storage error
 	GetByOriginalURL(ctx context.Context, originalURL string) (*entity.ShortURL, error)
+}
 
+// UserURLRetriever defines the interface for retrieving user-specific URLs.
+type UserURLRetriever interface {
 	// GetByUserID retrieves all shortened URLs associated with a specific user.
 	// This enables user-specific URL management and listing.
 	//
@@ -90,7 +122,10 @@ type URLRepository interface {
 	//   - []entity.ShortURL: Slice of URL entities belonging to the user
 	//   - error: Storage error if retrieval fails
 	GetByUserID(ctx context.Context, userID string) ([]entity.ShortURL, error)
+}
 
+// URLUpdater defines the interface for updating existing URLs.
+type URLUpdater interface {
 	// Update modifies an existing shortened URL record.
 	// It allows updating URL properties while preserving core metadata.
 	//
@@ -102,7 +137,10 @@ type URLRepository interface {
 	//   - *entity.ShortURL: Updated URL entity
 	//   - error: ErrNotFound if URL doesn't exist, or storage error
 	Update(ctx context.Context, shortURL *entity.ShortURL) (*entity.ShortURL, error)
+}
 
+// URLDeleter defines the interface for deleting URLs.
+type URLDeleter interface {
 	// Delete removes a shortened URL from the repository by its ID.
 	// This may be a hard or soft delete depending on implementation.
 	//
@@ -114,7 +152,10 @@ type URLRepository interface {
 	//   - string: ID of the deleted URL for confirmation
 	//   - error: ErrNotFound if URL doesn't exist, or storage error
 	Delete(ctx context.Context, id string) (string, error)
+}
 
+// DuplicateFinder defines the interface for finding duplicate URLs.
+type DuplicateFinder interface {
 	// FindDuplicateURLs identifies which URLs from a batch already exist in the repository.
 	// This helps prevent duplicate URL creation in batch operations.
 	//
@@ -126,7 +167,10 @@ type URLRepository interface {
 	//   - []entity.ShortURL: Existing URL entities that match the provided URLs
 	//   - error: Storage error if lookup fails
 	FindDuplicateURLs(ctx context.Context, urls []entity.BatchShortenRequest) ([]entity.ShortURL, error)
+}
 
+// BatchStatusUpdater defines the interface for batch URL status updates.
+type BatchStatusUpdater interface {
 	// UpdateIsActive updates the active status of multiple URLs in a batch operation.
 	// This implements batch logical deletion/restoration for user URLs.
 	//

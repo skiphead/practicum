@@ -6,7 +6,7 @@ import (
 	"github.com/skiphead/practicum/infra/client/postgresql"
 	"github.com/skiphead/practicum/infra/config"
 	"github.com/skiphead/practicum/internal/audit"
-	handlers "github.com/skiphead/practicum/internal/delivery/handler"
+	"github.com/skiphead/practicum/internal/delivery/handler"
 	"github.com/skiphead/practicum/internal/domain/repository"
 	"github.com/skiphead/practicum/internal/usecase"
 )
@@ -20,10 +20,10 @@ func TestNewServer(t *testing.T) {
 	pool := postgresql.SafeConn(cfg.DatabaseDSN)
 
 	repoStorage := repository.NewStorageRepository(pool)
-	handler := handlers.NewURLHandler(usecase.NewStorageUseCase("http://localhost", memoryStorage,
+	urlHandler := handler.NewURLHandler(usecase.NewStorageUseCase("http://localhost", memoryStorage,
 		repoStorage), cfg.ServerAddr, cfg.BaseURL, "", &audit.Adapter{})
 
-	server, err := NewServerChi(cfg, handler.ChiMux())
+	server, err := NewServerChi(cfg, urlHandler.ChiMux())
 	if err != nil {
 		t.Fatalf("Failed to create server: %v", err)
 	}
@@ -39,10 +39,10 @@ func TestNewServer_InvalidConfig(t *testing.T) {
 	pool := postgresql.SafeConn(cfg.DatabaseDSN)
 
 	repoStorage := repository.NewStorageRepository(pool)
-	handler := handlers.NewURLHandler(usecase.NewStorageUseCase("http://localhost", memoryStorage,
+	urlHandler := handler.NewURLHandler(usecase.NewStorageUseCase("http://localhost", memoryStorage,
 		repoStorage), cfg.ServerAddr, cfg.BaseURL, "", &audit.Adapter{})
 
-	_, err := NewServerChi(cfg, handler.ChiMux())
+	_, err := NewServerChi(cfg, urlHandler.ChiMux())
 	if err == nil {
 		t.Error("Expected error for invalid config, got nil")
 	}
