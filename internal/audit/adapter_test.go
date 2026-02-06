@@ -156,14 +156,18 @@ func TestAdapter_LogEvent_ContextCancelled(t *testing.T) {
 		URL:       "http://example.com",
 	}
 
-	// Создаем отмененный контекст
+	// Create and immediately cancel context
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	// Ожидаем ошибку отмененного контекста
+	// Try to log with cancelled context
 	err = adapter.LogEvent(ctx, event)
+
+	// Should return context error
 	if err == nil {
 		t.Error("Expected error for cancelled context")
+	} else if !errors.Is(err, context.Canceled) {
+		t.Errorf("Expected context.Canceled error, got: %v", err)
 	}
 }
 

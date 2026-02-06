@@ -169,6 +169,13 @@ func NewAdapter(cfg Config) (*Adapter, error) {
 // Events are processed asynchronously. If the queue is full,
 // new events are dropped to prevent memory exhaustion.
 func (a *Adapter) LogEvent(ctx context.Context, event *Event) error {
+	// Check context first
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	default:
+	}
+
 	a.mutex.RLock()
 	if !a.enabled {
 		a.mutex.RUnlock()
