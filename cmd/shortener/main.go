@@ -1,4 +1,3 @@
-// main.go
 // Main package for the URL shortening application.
 // The application provides an HTTP server for processing URL shortening requests,
 // using file storage or PostgreSQL database for data persistence.
@@ -6,6 +5,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -14,6 +14,9 @@ import (
 	"github.com/skiphead/practicum/internal/audit"
 	"github.com/skiphead/practicum/internal/delivery"
 	"github.com/skiphead/practicum/internal/delivery/handler"
+	"github.com/skiphead/practicum/internal/domain/repository"
+	"github.com/skiphead/practicum/internal/usecase"
+	"go.uber.org/zap"
 
 	"log"
 	"os"
@@ -21,45 +24,24 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/skiphead/practicum/internal/domain/repository"
-	"github.com/skiphead/practicum/internal/usecase"
-	"go.uber.org/zap"
-
 	_ "net/http/pprof"
 )
 
-// main - entry point of the application.
-// Initializes application components and starts the server.
-// Initialization sequence:
-// 1. Logger
-// 2. Configuration
-// 3. Storage (file and database)
-// 4. HTTP request handlers
-// 5. HTTP server
+var buildVersion, buildDate, buildCommit string
+
+// main is the entry point. Initializes components and starts the HTTP server.
 func main() {
-	// Initialize logger
-	logger, err := zap.NewProduction()
-	if err != nil {
-		log.Fatalf("can't initialize zap logger: %v", err)
+	printBuildInfo()
 
-	}
-	defer func() {
-		if syncErr := logger.Sync(); syncErr != nil {
-			log.Printf("Error syncing logger: %v\n", syncErr)
-		}
-	}()
-	zap.ReplaceGlobals(logger)
+	logger := initLogger()
+	defer logger.Sync()
 
-	// Load configuration
 	cfg := loadConfig()
-
 	auditClient := initAudit(cfg)
 
-	// Initialize storage
 	store := initFileStorage(cfg)
 	storageRepo := initDatabase(cfg)
 
-	// Create URL handler
 	h := handler.NewURLHandler(
 		usecase.NewStorageUseCase(cfg.BaseURL, *store, *storageRepo),
 		cfg.ServerAddr,
@@ -67,21 +49,38 @@ func main() {
 		cfg.SessionKey,
 		auditClient)
 
-	// Initialize server
 	server := initServer(cfg, h)
-
-	// Start server
 	runServer(server)
 }
 
-// runServer manages the HTTP server lifecycle.
-// Starts the server in a separate goroutine and handles shutdown signals.
-// Parameters:
-// - server: HTTP server instance to manage
-// Algorithm:
-// - Starts server in a separate channel for error handling
-// - Waits for OS Interrupt or SIGTERM signals
-// - Performs graceful shutdown with 10-second timeout
+// printBuildInfo displays version, date, and commit information.
+func printBuildInfo() {
+	if buildVersion == "" {
+		buildVersion = "N/A"
+	}
+	if buildCommit == "" {
+		buildCommit = "N/A"
+	}
+	if buildDate == "" {
+		buildDate = "N/A"
+	}
+
+	fmt.Printf("Build version: %s\n", buildVersion)
+	fmt.Printf("Build date: %s\n", buildDate)
+	fmt.Printf("Build commit: %s\n", buildCommit)
+}
+
+// initLogger configures the global zap logger.
+func initLogger() *zap.Logger {
+	logger, err := zap.NewProduction()
+	if err != nil {
+		log.Fatalf("can't initialize zap logger: %v", err)
+	}
+	zap.ReplaceGlobals(logger)
+	return logger
+}
+
+// runServer starts the HTTP server and handles graceful shutdown.
 func runServer(server *delivery.Server) {
 	serverErrChan := server.Start()
 
@@ -106,13 +105,7 @@ func runServer(server *delivery.Server) {
 	}
 }
 
-// initFileStorage initializes file storage for URLs.
-// Parameters:
-//   - cfg: application configuration containing file storage path
-//
-// Returns:
-//   - pointer to initialized file storage
-//   - terminates application on initialization error
+// initFileStorage creates file-based URL storage.
 func initFileStorage(cfg *config.Config) *repository.FileStorage {
 	store, err := repository.NewCachedFileStorage(cfg.FileStoragePath)
 	if err != nil {
@@ -121,18 +114,7 @@ func initFileStorage(cfg *config.Config) *repository.FileStorage {
 	return &store
 }
 
-// initDatabase initializes PostgreSQL connection and applies migrations.
-// Parameters:
-//   - cfg: application configuration with database DSN connection string
-//
-// Returns:
-//   - pointer to URL repository or nil on error
-//
-// Actions:
-//  1. Establishes connection with database connection pool
-//  2. Checks connection via ping
-//  3. Applies migrations through standard database/sql library
-//  4. Creates repository for URL operations
+// initDatabase establishes PostgreSQL connection and runs migrations.
 func initDatabase(cfg *config.Config) *repository.URLRepository {
 	pool, connErr := pgxpool.New(context.Background(), cfg.DatabaseDSN)
 	if connErr != nil {
@@ -146,18 +128,10 @@ func initDatabase(cfg *config.Config) *repository.URLRepository {
 	}
 
 	repo := repository.NewStorageRepository(pool)
-
 	return &repo
 }
 
-// initServer creates an HTTP server instance using the Chi framework.
-// Parameters:
-//   - cfg: server configuration
-//   - handler: HTTP request handler
-//
-// Returns:
-//   - configured server instance
-//   - terminates application on server creation error
+// initServer creates an HTTP server with Chi router.
 func initServer(cfg *config.Config, handler *handler.URLHandler) *delivery.Server {
 	srv, err := delivery.NewServerChi(cfg, handler.ChiMux())
 	if err != nil {
@@ -166,15 +140,7 @@ func initServer(cfg *config.Config, handler *handler.URLHandler) *delivery.Serve
 	return srv
 }
 
-// loadConfig loads application configuration from YAML file.
-// Returns:
-//   - pointer to loaded configuration
-//
-// Logic:
-//   - Attempts to load configuration from configs/config.yaml file
-//   - On error uses default configuration
-//   - Validates required parameters
-//   - Terminates application on validation error
+// loadConfig reads configuration from YAML file or uses defaults.
 func loadConfig() *config.Config {
 	cfg, err := config.LoadConfig("configs/config.yaml")
 	if err != nil {
@@ -190,19 +156,7 @@ func loadConfig() *config.Config {
 	return cfg
 }
 
-// initAudit initializes the audit system for logging URL operations.
-// Parameters:
-//   - cfg: application configuration with audit settings
-//
-// Returns:
-//   - pointer to initialized audit adapter
-//   - terminates application on initialization error
-//
-// Creates audit adapter with:
-//   - File logging to specified audit file
-//   - HTTP endpoint for remote audit logging
-//   - Batch processing for efficient event delivery
-//   - Asynchronous queue for non-blocking operations
+// initAudit sets up the audit logging system.
 func initAudit(cfg *config.Config) *audit.Adapter {
 	auditCfg := audit.Config{
 		FilePath:     cfg.AuditFile,
