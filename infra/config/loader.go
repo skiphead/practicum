@@ -42,16 +42,21 @@ func LoadConfig(configPath string) (*Config, error) {
 
 	// Define command-line flags
 	var flagServerAddr, flagBaseURL, flagFileStoragePath, flagDataBaseDSN, flagAuditFile, flagAuditURL string
+	var flagTLS bool
 	flag.StringVar(&flagServerAddr, "a", "", "Port for server startup")
 	flag.StringVar(&flagBaseURL, "b", "", "Base address for shortened URLs")
 	flag.StringVar(&flagDataBaseDSN, "d", "", "PostgreSQL connection string (user=postgres password=secret host=localhost port=5432 database=pgx_test sslmode=disable)")
 	flag.StringVar(&flagFileStoragePath, "f", "", "Path to file storage")
 	flag.StringVar(&flagAuditFile, "audit-file", "", "Path to audit log file")
 	flag.StringVar(&flagAuditURL, "audit-url", "", "Full URL of remote audit log receiver")
+	flag.BoolVar(&flagTLS, "s", false, "Enable TLS on HTTP server")
 
 	flag.Parse()
 
 	// Apply command-line flags (highest priority)
+	if flagTLS {
+		config.EnableTLS = true
+	}
 	if flagServerAddr != "" {
 		config.ServerAddr = flagServerAddr
 	}
@@ -69,6 +74,9 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 
 	// Apply environment variables (medium priority)
+	if IsHTTPSSEnabled() {
+		config.EnableTLS = true
+	}
 	if env := os.Getenv("BASE_URL"); env != "" {
 		config.BaseURL = env
 	}

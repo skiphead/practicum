@@ -22,6 +22,9 @@ import (
 // and lifecycle management features.
 type Server struct {
 	*http.Server // Embedded standard HTTP server
+	tlsEnabled   bool
+	pathCert     string
+	pathKey      string
 }
 
 // NewServerChi creates and configures a new HTTP server with Chi router.
@@ -52,6 +55,9 @@ func NewServerChi(cfg *config.Config, mux *chi.Mux) (*Server, error) {
 			WriteTimeout: 15 * time.Second,
 			IdleTimeout:  60 * time.Second,
 		},
+		cfg.EnableTLS,
+		cfg.PathCert,
+		cfg.PathKey,
 	}, nil
 }
 
@@ -82,7 +88,14 @@ func (s *Server) Start() <-chan error {
 
 	go func() {
 		zap.L().Info("Starting server", zap.String("addr", s.Server.Addr))
-		if err := s.Server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		if s.tlsEnabled {
+			err = s.Server.ListenAndServeTLS(s.pathCert, s.pathKey)
+		} else {
+			err = s.Server.ListenAndServe()
+		}
+
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverError <- err
 		}
 		close(serverError)

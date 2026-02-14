@@ -34,7 +34,12 @@ func main() {
 	printBuildInfo()
 
 	logger := initLogger()
-	defer logger.Sync()
+	defer func(logger *zap.Logger) {
+		err := logger.Sync()
+		if err != nil {
+			logger.Fatal("failed to sync logger", zap.Error(err))
+		}
+	}(logger)
 
 	cfg := loadConfig()
 	auditClient := initAudit(cfg)

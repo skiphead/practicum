@@ -17,6 +17,9 @@ type Config struct {
 	SessionKey      string `yaml:"session_key"`       // Secret key for JWT session encryption
 	AuditFile       string `yaml:"audit_file"`        // Path to audit log file
 	AuditURL        string `yaml:"audit_url"`         // URL for remote audit logging endpoint
+	EnableTLS       bool   `yaml:"enable_tls"`
+	PathCert        string `yaml:"path_cert"`
+	PathKey         string `yaml:"path_key"`
 }
 
 // NewDefaultConfig creates a new Config instance with default values.
