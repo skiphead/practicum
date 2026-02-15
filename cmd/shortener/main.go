@@ -90,7 +90,10 @@ func initLogger() *zap.Logger {
 func runServer(server *delivery.Server) {
 	serverErrChan := server.Start()
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(),
+		os.Interrupt,    // SIGINT
+		syscall.SIGTERM, // SIGTERM
+		syscall.SIGQUIT) // SIGQUIT
 	defer stop()
 
 	select {
