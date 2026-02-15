@@ -1,8 +1,9 @@
-// main_integration_test.go
 package main
 
 import (
 	"os"
+	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,5 +81,92 @@ enable_https: false
 	case <-time.After(5 * time.Second):
 		// Принудительно завершаем
 		t.Log("Таймаут, приложение продолжает работать")
+	}
+}
+
+// TestBuildWithFlags - интеграционный тест, который проверяет сборку с флагами
+// Запускать с тегами: go test -tags=integration -v
+func TestBuildWithFlags(t *testing.T) {
+	// Определяем тестовые значения
+	testVersion := "test-version-1.0"
+	testDate := "2023-12-31"
+	testCommit := "test-commit-abc123"
+
+	// Команда для сборки тестового бинарника
+	buildCmd := exec.Command("go", "build",
+		"-ldflags",
+		"-X main.buildVersion="+testVersion+
+			" -X main.buildDate="+testDate+
+			" -X main.buildCommit="+testCommit,
+		"-o", "test_binary",
+		".")
+
+	output, err := buildCmd.CombinedOutput()
+	if err != nil {
+		t.Logf("Вывод команды сборки: %s", output)
+		t.Skipf("Пропускаем интеграционный тест: не удалось собрать бинарник: %v", err)
+	}
+	defer func() {
+		// Удаляем созданный бинарник после теста
+		cleanupCmd := exec.Command("rm", "-f", "test_binary")
+		cleanupCmd.Run()
+	}()
+
+	// Запускаем собранный бинарник и проверяем вывод
+	runCmd := exec.Command("./test_binary")
+	output, err = runCmd.CombinedOutput()
+	if err != nil {
+		// Игнорируем ошибки выполнения, так как нас интересует только вывод версий
+		t.Logf("Бинарник вернул ошибку (ожидаемо, так как нет конфигурации): %v", err)
+	}
+
+	outputStr := string(output)
+
+	// Проверяем, что вывод содержит ожидаемые значения
+	if !strings.Contains(outputStr, "Build version: "+testVersion) {
+		t.Errorf("Вывод не содержит ожидаемую версию. Вывод: %s", outputStr)
+	}
+	if !strings.Contains(outputStr, "Build date: "+testDate) {
+		t.Errorf("Вывод не содержит ожидаемую дату. Вывод: %s", outputStr)
+	}
+	if !strings.Contains(outputStr, "Build commit: "+testCommit) {
+		t.Errorf("Вывод не содержит ожидаемый коммит. Вывод: %s", outputStr)
+	}
+}
+
+// TestBuildWithoutFlags проверяет сборку без флагов
+func TestBuildWithoutFlags(t *testing.T) {
+	// Команда для сборки тестового бинарника без флагов
+	buildCmd := exec.Command("go", "build", "-o", "test_binary_no_flags", ".")
+
+	output, err := buildCmd.CombinedOutput()
+	if err != nil {
+		t.Logf("Вывод команды сборки: %s", output)
+		t.Skipf("Пропускаем интеграционный тест: не удалось собрать бинарник: %v", err)
+	}
+	defer func() {
+		// Удаляем созданный бинарник после теста
+		cleanupCmd := exec.Command("rm", "-f", "test_binary_no_flags")
+		cleanupCmd.Run()
+	}()
+
+	// Запускаем собранный бинарник и проверяем вывод
+	runCmd := exec.Command("./test_binary_no_flags")
+	output, err = runCmd.CombinedOutput()
+	if err != nil {
+		t.Logf("Бинарник вернул ошибку (ожидаемо): %v", err)
+	}
+
+	outputStr := string(output)
+
+	// Проверяем, что вывод содержит значения по умолчанию "N/A"
+	if !strings.Contains(outputStr, "Build version: N/A") {
+		t.Errorf("Вывод не содержит версию по умолчанию 'N/A'. Вывод: %s", outputStr)
+	}
+	if !strings.Contains(outputStr, "Build date: N/A") {
+		t.Errorf("Вывод не содержит дату по умолчанию 'N/A'. Вывод: %s", outputStr)
+	}
+	if !strings.Contains(outputStr, "Build commit: N/A") {
+		t.Errorf("Вывод не содержит коммит по умолчанию 'N/A'. Вывод: %s", outputStr)
 	}
 }

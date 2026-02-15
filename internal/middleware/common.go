@@ -1,3 +1,6 @@
+// Package handlers provides HTTP middleware and handlers for the URL shortening service.
+// It includes compression, logging, authentication, and other HTTP-level functionality
+// to enhance request/response processing and observability.
 package handlers
 
 import (

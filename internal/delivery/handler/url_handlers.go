@@ -47,7 +47,7 @@ func (h *URLHandler) CreateShortAPIURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var original entity.ShortenRequest
-	if err := json.Unmarshal(body, &original); err != nil {
+	if err = json.Unmarshal(body, &original); err != nil {
 		zap.L().Error("unmarshal error", zap.Error(err))
 		http.Error(w, "URL is required", http.StatusBadRequest)
 		return

@@ -1,3 +1,6 @@
+// Package mocks provides mock implementations for testing components of the URL shortening service.
+// It includes mock servers, clients, and other dependencies to isolate unit tests
+// from external systems and simplify test setup and verification.
 package mocks
 
 import (

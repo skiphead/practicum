@@ -1,11 +1,11 @@
-// main.go
-// Основной пакет приложения для сокращения URL-адресов.
-// Приложение предоставляет HTTP-сервер для обработки запросов на сокращение URL-адресов,
-// используя файловое хранилище или базу данных PostgreSQL для сохранения данных.
+// Main package for the URL shortening application.
+// The application provides an HTTP server for processing URL shortening requests,
+// using file storage or PostgreSQL database for data persistence.
 package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
@@ -13,7 +13,10 @@ import (
 	"github.com/skiphead/practicum/infra/config"
 	"github.com/skiphead/practicum/internal/audit"
 	"github.com/skiphead/practicum/internal/delivery"
-	handler "github.com/skiphead/practicum/internal/delivery/handler"
+	"github.com/skiphead/practicum/internal/delivery/handler"
+	"github.com/skiphead/practicum/internal/domain/repository"
+	"github.com/skiphead/practicum/internal/usecase"
+	"go.uber.org/zap"
 
 	"log"
 	"os"
@@ -21,44 +24,24 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/skiphead/practicum/internal/domain/repository"
-	"github.com/skiphead/practicum/internal/usecase"
-	"go.uber.org/zap"
-
 	_ "net/http/pprof"
 )
 
-// main - точка входа в приложение.
-// Инициализирует компоненты приложения и запускает сервер.
-// Последовательность инициализации:
-// 1. Логгер
-// 2. Конфигурация
-// 3. Хранилища (файловое и база данных)
-// 4. Обработчики HTTP-запросов
-// 5. HTTP-сервер
+var buildVersion, buildDate, buildCommit string
+
+// main is the entry point. Initializes components and starts the HTTP server.
 func main() {
-	// Инициализация логгера
-	logger, err := zap.NewProduction()
-	if err != nil {
-		log.Fatalf("can't initialize zap logger: %v", err)
-	}
-	defer func() {
-		if syncErr := logger.Sync(); syncErr != nil {
-			log.Printf("Error syncing logger: %v\n", syncErr)
-		}
-	}()
-	zap.ReplaceGlobals(logger)
+	printBuildInfo()
 
-	// Загрузка конфигурации
+	logger := initLogger()
+	defer logger.Sync()
+
 	cfg := loadConfig()
-
 	auditClient := initAudit(cfg)
 
-	// Инициализация хранилищ
 	store := initFileStorage(cfg)
 	storageRepo := initDatabase(cfg)
 
-	// Создание обработчика URL
 	h := handler.NewURLHandler(
 		usecase.NewStorageUseCase(cfg.BaseURL, *store, *storageRepo),
 		cfg.ServerAddr,
@@ -66,21 +49,38 @@ func main() {
 		cfg.SessionKey,
 		auditClient)
 
-	// Инициализация сервера
 	server := initServer(cfg, h)
-
-	// Запуск сервера
 	runServer(server)
 }
 
-// runServer управляет жизненным циклом HTTP-сервера.
-// Запускает сервер в отдельной горутине и обрабатывает сигналы завершения работы.
-// Параметры:
-// - server: экземпляр HTTP-сервера для управления
-// Алгоритм:
-// - Запускает сервер в отдельном канале для обработки ошибок
-// - Ожидает сигналов OS Interrupt или SIGTERM
-// - Выполняет graceful shutdown с таймаутом 10 секунд
+// printBuildInfo displays version, date, and commit information.
+func printBuildInfo() {
+	if buildVersion == "" {
+		buildVersion = "N/A"
+	}
+	if buildCommit == "" {
+		buildCommit = "N/A"
+	}
+	if buildDate == "" {
+		buildDate = "N/A"
+	}
+
+	fmt.Printf("Build version: %s\n", buildVersion)
+	fmt.Printf("Build date: %s\n", buildDate)
+	fmt.Printf("Build commit: %s\n", buildCommit)
+}
+
+// initLogger configures the global zap logger.
+func initLogger() *zap.Logger {
+	logger, err := zap.NewProduction()
+	if err != nil {
+		log.Fatalf("can't initialize zap logger: %v", err)
+	}
+	zap.ReplaceGlobals(logger)
+	return logger
+}
+
+// runServer starts the HTTP server and handles graceful shutdown.
 func runServer(server *delivery.Server) {
 	serverErrChan := server.Start()
 
@@ -98,18 +98,14 @@ func runServer(server *delivery.Server) {
 
 	if err := server.Shutdown(10 * time.Second); err != nil {
 		zap.L().Error("Server shutdown error", zap.Error(err))
+		os.Exit(1)
 	} else {
 		zap.L().Info("Server shutdown completed")
+		os.Exit(0)
 	}
 }
 
-// initFileStorage инициализирует файловое хранилище для URL.
-// Параметры:
-//   - cfg: конфигурация приложения, содержащая путь к файлу хранилища
-//
-// Возвращает:
-//   - указатель на инициализированное файловое хранилище
-//   - завершает приложение при ошибке инициализации
+// initFileStorage creates file-based URL storage.
 func initFileStorage(cfg *config.Config) *repository.FileStorage {
 	store, err := repository.NewCachedFileStorage(cfg.FileStoragePath)
 	if err != nil {
@@ -118,18 +114,7 @@ func initFileStorage(cfg *config.Config) *repository.FileStorage {
 	return &store
 }
 
-// initDatabase инициализирует подключение к PostgreSQL и применяет миграции.
-// Параметры:
-//   - cfg: конфигурация приложения с DSN строкой подключения
-//
-// Возвращает:
-//   - указатель на репозиторий URL или nil при ошибке
-//
-// Действия:
-//  1. Устанавливает соединение с пулом подключений БД
-//  2. Проверяет подключение через ping
-//  3. Применяет миграции через стандартную библиотеку database/sql
-//  4. Создает репозиторий для работы с URL
+// initDatabase establishes PostgreSQL connection and runs migrations.
 func initDatabase(cfg *config.Config) *repository.URLRepository {
 	pool, connErr := pgxpool.New(context.Background(), cfg.DatabaseDSN)
 	if connErr != nil {
@@ -143,18 +128,10 @@ func initDatabase(cfg *config.Config) *repository.URLRepository {
 	}
 
 	repo := repository.NewStorageRepository(pool)
-
 	return &repo
 }
 
-// initServer создает экземпляр HTTP-сервера с использованием фреймворка Chi.
-// Параметры:
-//   - cfg: конфигурация сервера
-//   - handler: обработчик HTTP-запросов
-//
-// Возвращает:
-//   - сконфигурированный экземпляр сервера
-//   - завершает приложение при ошибке создания сервера
+// initServer creates an HTTP server with Chi router.
 func initServer(cfg *config.Config, handler *handler.URLHandler) *delivery.Server {
 	srv, err := delivery.NewServerChi(cfg, handler.ChiMux())
 	if err != nil {
@@ -163,15 +140,7 @@ func initServer(cfg *config.Config, handler *handler.URLHandler) *delivery.Serve
 	return srv
 }
 
-// loadConfig загружает конфигурацию приложения из YAML-файла.
-// Возвращает:
-//   - указатель на загруженную конфигурацию
-//
-// Логика:
-//   - Пытается загрузить конфигурацию из файла configs/config.yaml
-//   - При ошибке использует конфигурацию по умолчанию
-//   - Выполняет валидацию обязательных параметров
-//   - Завершает приложение при ошибке валидации
+// loadConfig reads configuration from YAML file or uses defaults.
 func loadConfig() *config.Config {
 	cfg, err := config.LoadConfig("configs/config.yaml")
 	if err != nil {
@@ -187,8 +156,8 @@ func loadConfig() *config.Config {
 	return cfg
 }
 
+// initAudit sets up the audit logging system.
 func initAudit(cfg *config.Config) *audit.Adapter {
-
 	auditCfg := audit.Config{
 		FilePath:     cfg.AuditFile,
 		HTTPEndpoint: cfg.AuditURL,

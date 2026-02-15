@@ -63,7 +63,7 @@ func (r *storageRepository) FindDuplicateURLs(ctx context.Context, urls []entity
 
 	for rows.Next() {
 		var url entity.ShortURL
-		err := rows.Scan(
+		err = rows.Scan(
 			&url.ID,
 			&url.CreatedAt,
 			&url.ExpiresAt,

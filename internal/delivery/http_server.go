@@ -1,3 +1,6 @@
+// Package delivery provides HTTP server implementation and delivery layer components.
+// It includes server lifecycle management, graceful shutdown, and integration
+// with Chi router and pprof profiling for building robust HTTP services.
 package delivery
 
 import (
@@ -66,10 +69,16 @@ func NewServerChi(cfg *config.Config, mux *chi.Mux) (*Server, error) {
 //
 // Note: The pprof server provides profiling endpoints at /debug/pprof/
 func (s *Server) Start() <-chan error {
-	// Start pprof profiling server on port 8081
-	go http.ListenAndServe(":8081", nil)
 
 	serverError := make(chan error, 1)
+
+	// Start pprof profiling server on port 8081
+	go func() {
+		err := http.ListenAndServe(":8081", nil)
+		if err != nil {
+			serverError <- err
+		}
+	}()
 
 	go func() {
 		zap.L().Info("Starting server", zap.String("addr", s.Server.Addr))
