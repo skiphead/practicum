@@ -39,7 +39,10 @@ func TestIsHTTPSSEnabled(t *testing.T) {
 			if tt.envValue == "" && tt.name == "unset variable" {
 				// Unset the variable completely
 				t.Setenv("ENABLE_HTTPS", "") // Go 1.17+ automatically unsets when value is empty
-				os.Unsetenv("ENABLE_HTTPS")  // Explicit unset for older Go versions
+				err := os.Unsetenv("ENABLE_HTTPS")
+				if err != nil {
+					return
+				} // Explicit unset for older Go versions
 			} else {
 				t.Setenv("ENABLE_HTTPS", tt.envValue)
 			}
@@ -80,7 +83,10 @@ func BenchmarkIsHTTPSSEnabled(b *testing.B) {
 			if bc.value != "" {
 				b.Setenv("ENABLE_HTTPS", bc.value)
 			} else {
-				os.Unsetenv("ENABLE_HTTPS")
+				err := os.Unsetenv("ENABLE_HTTPS")
+				if err != nil {
+					return
+				}
 			}
 
 			b.ResetTimer()

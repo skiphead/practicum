@@ -282,7 +282,10 @@ func TestLoadConfig(t *testing.T) {
 
 		tempDir := t.TempDir()
 		configPath := filepath.Join(tempDir, "empty.json")
-		os.WriteFile(configPath, []byte(`{}`), 0644)
+		err := os.WriteFile(configPath, []byte(`{}`), 0644)
+		if err != nil {
+			return
+		}
 
 		config, err := LoadConfig(configPath)
 		if err != nil {

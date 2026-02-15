@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,14 +9,6 @@ import (
 
 	"github.com/stretchr/testify/require"
 )
-
-// getFreePort возвращает свободный локальный порт
-func getFreePort(t *testing.T) int {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err, "Не удалось найти свободный порт")
-	defer listener.Close()
-	return listener.Addr().(*net.TCPAddr).Port
-}
 
 func TestBuildWithFlags(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -39,7 +30,12 @@ func TestBuildWithFlags(t *testing.T) {
 		t.Logf("Вывод сборки:\n%s", output)
 		t.Skipf("Пропускаем тест: не удалось собрать бинарник: %v", err)
 	}
-	defer os.Remove(binPath)
+	defer func(name string) {
+		err := os.Remove(name)
+		if err != nil {
+			return
+		}
+	}(binPath)
 
 	runCmd := exec.Command(binPath, "-v")
 	output, _ = runCmd.CombinedOutput()
@@ -61,7 +57,12 @@ func TestBuildWithoutFlags(t *testing.T) {
 		t.Logf("Вывод сборки:\n%s", output)
 		t.Skipf("Пропускаем тест: не удалось собрать бинарник: %v", err)
 	}
-	defer os.Remove(binPath)
+	defer func(name string) {
+		err := os.Remove(name)
+		if err != nil {
+			return
+		}
+	}(binPath)
 
 	runCmd := exec.Command(binPath, "-v")
 	output, _ = runCmd.CombinedOutput()
