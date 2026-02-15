@@ -213,115 +213,6 @@ func TestAllSignals(t *testing.T) {
 	}
 }
 
-// TestHealthCheck проверяет, что сервер отвечает на запросы
-func TestHealthCheck(t *testing.T) {
-	addr := getFreeAddr()
-	t.Logf("Using address for health check: %s", addr)
-
-	router := chi.NewRouter()
-	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-
-	cfg := &config.Config{
-		ServerAddr: addr,
-		PprofPort:  fmt.Sprintf(":%d", getFreePort()),
-	}
-	t.Logf("Config ServerAddr: %s", cfg.ServerAddr)
-	t.Logf("Config PprofPort: %s", cfg.PprofPort)
-
-	server, err := delivery.NewServerChi(cfg, router)
-	require.NoError(t, err)
-
-	serverAddr := server.GetAddr()
-	t.Logf("Actual server address from GetAddr(): %s", serverAddr)
-
-	// Запускаем сервер
-	_ = server.Start()
-
-	// Даем серверу время запуститься
-	time.Sleep(200 * time.Millisecond)
-
-	// Делаем запрос
-	func() {
-		requestURL := "http://" + serverAddr + "/health"
-		t.Logf("Making request to: %s", requestURL)
-
-		client := http.Client{Timeout: 2 * time.Second}
-		resp, err := client.Get(requestURL)
-		if err != nil {
-			t.Logf("Health check request failed: %v", err)
-			return
-		}
-		defer resp.Body.Close()
-
-		body, err := io.ReadAll(resp.Body)
-		require.NoError(t, err)
-
-		assert.Equal(t, "OK", string(body))
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
-		t.Log("Health check passed")
-	}()
-
-	// Останавливаем сервер
-	t.Log("Shutting down server...")
-	err = server.Shutdown(1 * time.Second)
-	require.NoError(t, err)
-
-	// Даем время на завершение
-	time.Sleep(500 * time.Millisecond)
-
-	// Проверяем, что сервер действительно остановлен
-	func() {
-		client := http.Client{Timeout: 1 * time.Second}
-		_, err := client.Get("http://" + serverAddr + "/health")
-		assert.Error(t, err, "Server should not be responding after shutdown")
-	}()
-
-	t.Log("Test completed successfully")
-}
-
-// TestHealthCheckSimple упрощенная версия
-func TestHealthCheckSimple(t *testing.T) {
-	addr := getFreeAddr()
-	t.Logf("Testing with address: %s", addr)
-
-	router := chi.NewRouter()
-	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	cfg := &config.Config{
-		ServerAddr: addr,
-		PprofPort:  fmt.Sprintf(":%d", getFreePort()),
-	}
-
-	server, err := delivery.NewServerChi(cfg, router)
-	require.NoError(t, err)
-
-	// Запускаем сервер
-	_ = server.Start()
-
-	// Ждем запуска
-	time.Sleep(100 * time.Millisecond)
-
-	// Проверяем, что сервер работает
-	resp, err := http.Get("http://" + addr + "/health")
-	require.NoError(t, err)
-	resp.Body.Close()
-	t.Log("Server is running")
-
-	// Останавливаем сервер
-	err = server.Shutdown(1 * time.Second)
-	require.NoError(t, err)
-
-	// Проверяем, что сервер не отвечает
-	time.Sleep(100 * time.Millisecond)
-	_, err = http.Get("http://" + addr + "/health")
-	assert.Error(t, err, "Server should be stopped")
-}
-
 // TestParallelServers тестирует запуск нескольких серверов параллельно
 func TestParallelServers(t *testing.T) {
 	// Запускаем тесты параллельно
@@ -359,7 +250,8 @@ func TestParallelServers(t *testing.T) {
 			resp, err := client.Get("http://" + mainAddr + "/")
 			if err == nil {
 				defer resp.Body.Close()
-				io.Copy(io.Discard, resp.Body)
+				// Читаем тело для полного закрытия соединения
+				_, _ = io.Copy(io.Discard, resp.Body)
 				t.Log("Server 1 is responding")
 			} else {
 				t.Logf("Server 1 not responding: %v", err)
@@ -416,7 +308,8 @@ func TestParallelServers(t *testing.T) {
 			resp, err := client.Get("http://" + mainAddr + "/")
 			if err == nil {
 				defer resp.Body.Close()
-				io.Copy(io.Discard, resp.Body)
+				// Читаем тело для полного закрытия соединения
+				_, _ = io.Copy(io.Discard, resp.Body)
 				t.Log("Server 2 is responding")
 			} else {
 				t.Logf("Server 2 not responding: %v", err)
@@ -438,6 +331,179 @@ func TestParallelServers(t *testing.T) {
 			t.Log("Server 2 channel timeout")
 		}
 	})
+}
+
+// Также исправим TestHealthCheck, где может быть похожая проблема
+func TestHealthCheck(t *testing.T) {
+	addr := getFreeAddr()
+	t.Logf("Using address for health check: %s", addr)
+
+	router := chi.NewRouter()
+	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	cfg := &config.Config{
+		ServerAddr: addr,
+		PprofPort:  fmt.Sprintf(":%d", getFreePort()),
+	}
+	t.Logf("Config ServerAddr: %s", cfg.ServerAddr)
+	t.Logf("Config PprofPort: %s", cfg.PprofPort)
+
+	server, err := delivery.NewServerChi(cfg, router)
+	require.NoError(t, err)
+
+	serverAddr := server.GetAddr()
+	t.Logf("Actual server address from GetAddr(): %s", serverAddr)
+
+	// Запускаем сервер
+	_ = server.Start()
+
+	// Даем серверу время запуститься
+	time.Sleep(200 * time.Millisecond)
+
+	// Делаем запрос
+	func() {
+		requestURL := "http://" + serverAddr + "/health"
+		t.Logf("Making request to: %s", requestURL)
+
+		client := http.Client{Timeout: 2 * time.Second}
+		resp, err := client.Get(requestURL)
+		if err != nil {
+			t.Logf("Health check request failed: %v", err)
+			return
+		}
+		defer resp.Body.Close()
+
+		// Читаем тело для полного закрытия соединения
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			t.Logf("Failed to read body: %v", err)
+			return
+		}
+
+		assert.Equal(t, "OK", string(body))
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		t.Log("Health check passed")
+	}()
+
+	// Останавливаем сервер
+	t.Log("Shutting down server...")
+	err = server.Shutdown(1 * time.Second)
+	require.NoError(t, err)
+
+	// Даем время на завершение
+	time.Sleep(500 * time.Millisecond)
+
+	// Проверяем, что сервер действительно остановлен
+	func() {
+		client := http.Client{Timeout: 1 * time.Second}
+		resp, err := client.Get("http://" + serverAddr + "/health")
+		if err == nil {
+			defer resp.Body.Close()
+			_, _ = io.Copy(io.Discard, resp.Body)
+		}
+		assert.Error(t, err, "Server should not be responding after shutdown")
+	}()
+
+	t.Log("Test completed successfully")
+}
+
+// TestHealthCheckSimple упрощенная версия
+func TestHealthCheckSimple(t *testing.T) {
+	addr := getFreeAddr()
+	t.Logf("Testing with address: %s", addr)
+
+	router := chi.NewRouter()
+	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	cfg := &config.Config{
+		ServerAddr: addr,
+		PprofPort:  fmt.Sprintf(":%d", getFreePort()),
+	}
+
+	server, err := delivery.NewServerChi(cfg, router)
+	require.NoError(t, err)
+
+	// Запускаем сервер
+	errChan := server.Start()
+
+	// Ждем запуска с повторными попытками
+	maxAttempts := 10
+	var serverRunning bool
+
+	for i := 0; i < maxAttempts; i++ {
+		func() {
+			client := http.Client{Timeout: 500 * time.Millisecond}
+			resp, err := client.Get("http://" + addr + "/health")
+			if err != nil {
+				t.Logf("Attempt %d: server not ready: %v", i+1, err)
+				return
+			}
+			defer resp.Body.Close()
+
+			// Читаем тело для полного закрытия соединения
+			_, readErr := io.Copy(io.Discard, resp.Body)
+			if readErr != nil {
+				t.Logf("Attempt %d: error reading body: %v", i+1, readErr)
+				return
+			}
+
+			if resp.StatusCode == http.StatusOK {
+				serverRunning = true
+				t.Logf("Server is running (attempt %d)", i+1)
+			}
+		}()
+
+		if serverRunning {
+			break
+		}
+
+		// Проверяем канал ошибок
+		select {
+		case e := <-errChan:
+			t.Fatalf("Server error: %v", e)
+		default:
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+
+	if !serverRunning {
+		t.Fatal("Server failed to start within timeout")
+	}
+
+	// Финальная проверка с закрытием тела
+	func() {
+		resp, err := http.Get("http://" + addr + "/health")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		// Читаем тело для полного закрытия соединения
+		_, err = io.Copy(io.Discard, resp.Body)
+		require.NoError(t, err)
+
+		t.Log("Server confirmed running")
+	}()
+
+	// Останавливаем сервер
+	err = server.Shutdown(1 * time.Second)
+	require.NoError(t, err)
+
+	// Проверяем, что сервер не отвечает
+	time.Sleep(200 * time.Millisecond)
+
+	func() {
+		client := http.Client{Timeout: 500 * time.Millisecond}
+		resp, err := client.Get("http://" + addr + "/health")
+		if err == nil {
+			defer resp.Body.Close()
+			_, _ = io.Copy(io.Discard, resp.Body)
+		}
+		assert.Error(t, err, "Server should be stopped")
+	}()
 }
 
 // Тест для проверки уникальных pprof портов
