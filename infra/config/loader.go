@@ -1,11 +1,10 @@
 package config
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
-
-	"gopkg.in/yaml.v3"
 )
 
 const schema = "http" // Default URL scheme for shortened URLs
@@ -33,15 +32,16 @@ const schema = "http" // Default URL scheme for shortened URLs
 func LoadConfig(configPath string) (*Config, error) {
 	config := &Config{}
 
-	// Load from YAML file if exists
+	// Load from JSON file if exists
 	if data, err := os.ReadFile(configPath); err == nil {
-		if err = yaml.Unmarshal(data, config); err != nil {
+		if err = json.Unmarshal(data, config); err != nil {
 			return nil, fmt.Errorf("YAML parsing error: %w", err)
 		}
 	}
 
 	// Define command-line flags
-	var flagServerAddr, flagBaseURL, flagFileStoragePath, flagDataBaseDSN, flagAuditFile, flagAuditURL string
+	var flagServerAddr, flagBaseURL, flagFileStoragePath,
+		flagDataBaseDSN, flagAuditFile, flagAuditURL string
 	var flagTLS bool
 	flag.StringVar(&flagServerAddr, "a", "", "Port for server startup")
 	flag.StringVar(&flagBaseURL, "b", "", "Base address for shortened URLs")

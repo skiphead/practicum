@@ -1,0 +1,12 @@
+{
+  "server_addr": "localhost:8089",
+  "base_url": "localhost:8089",
+  "file_storage_path": "fileStorageData",
+  "database_dsn": "",
+  "session_key": "test",
+  "audit_file":  "shortener.log",
+  "audit_url": "",
+  "enable_tls": false,
+  "path_cert": "",
+  "path_key": ""
+}

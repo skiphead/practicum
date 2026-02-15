@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -147,12 +148,25 @@ func initServer(cfg *config.Config, handler *handler.URLHandler) *delivery.Serve
 
 // loadConfig reads configuration from YAML file or uses defaults.
 func loadConfig() *config.Config {
-	cfg, err := config.LoadConfig("configs/config.yaml")
+	pathConfig := "configs/config.json"
+
+	var flagConfig string
+	flag.StringVar(&flagConfig, "config", "", "Path to config file")
+	flag.Parse()
+
+	if flagConfig != "" {
+		pathConfig = flagConfig
+	}
+	if env := os.Getenv("CONFIG"); env != "" {
+		pathConfig = flagConfig
+	}
+
+	cfg, err := config.LoadConfig(pathConfig)
 	if err != nil {
 		cfg = config.NewDefaultConfig()
 		zap.L().Info("Using default configuration after failed config load",
 			zap.Error(err),
-			zap.String("config_path", "configs/config.yaml"))
+			zap.String("config_path", pathConfig))
 	}
 
 	if err = cfg.Validate(); err != nil {
