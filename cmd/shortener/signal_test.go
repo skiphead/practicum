@@ -76,7 +76,10 @@ func TestRunServerSignalHandling(t *testing.T) {
 	// Проверяем, что сервер отвечает
 	resp, err := http.Get("http://localhost:8082/ping")
 	if err == nil {
-		resp.Body.Close()
+		err := resp.Body.Close()
+		if err != nil {
+			return
+		}
 		t.Log("Server is responding")
 	}
 
