@@ -10,13 +10,17 @@ import (
 // Config holds the application configuration loaded from YAML or environment variables.
 // It defines all configurable parameters for the URL shortener service.
 type Config struct {
-	ServerAddr      string `yaml:"server_addr"`       // HTTP server address (host:port)
-	BaseURL         string `yaml:"base_url"`          // Base URL for shortened links (e.g., http://localhost:8080)
-	FileStoragePath string `yaml:"file_storage_path"` // Path to file storage for URL persistence
-	DatabaseDSN     string `yaml:"database_dsn"`      // PostgreSQL database connection string
-	SessionKey      string `yaml:"session_key"`       // Secret key for JWT session encryption
-	AuditFile       string `yaml:"audit_file"`        // Path to audit log file
-	AuditURL        string `yaml:"audit_url"`         // URL for remote audit logging endpoint
+	ServerAddr      string `yaml:"server_addr" json:"server_addr"`             // HTTP server address (host:port)
+	BaseURL         string `yaml:"base_url" json:"base_url"`                   // Base URL for shortened links (e.g., http://localhost:8080)
+	FileStoragePath string `yaml:"file_storage_path" json:"file_storage_path"` // Path to file storage for URL persistence
+	DatabaseDSN     string `yaml:"database_dsn" json:"database_dsn"`           // PostgreSQL database connection string
+	SessionKey      string `yaml:"session_key" json:"session_key"`             // Secret key for JWT session encryption
+	AuditFile       string `yaml:"audit_file" json:"audit_file"`               // Path to audit log file
+	AuditURL        string `yaml:"audit_url" json:"audit_url"`                 // URL for remote audit logging endpoint
+	EnableTLS       bool   `yaml:"enable_tls" json:"enable_tls"`
+	PathCert        string `yaml:"path_cert" json:"path_cert"`
+	PathKey         string `yaml:"path_key" json:"path_key"`
+	PprofPort       string `yaml:"pprof_port" json:"pprof_port" env:"PPROF_PORT"` // Порт для pprof сервера
 }
 
 // NewDefaultConfig creates a new Config instance with default values.
