@@ -19,9 +19,6 @@ import (
 // Batch size for database operations to optimize performance.
 const batchSize = 100
 
-// ErrDuplicateURL indicates that a URL already exists in the system.
-var ErrDuplicateURL = fmt.Errorf("duplicate URL")
-
 // URLUseCase defines the business logic interface for URL shortening operations.
 // It provides methods for URL management, batch operations, and fallback handling.
 type URLUseCase interface {

@@ -414,7 +414,6 @@ const (
 	ErrorTypeClient           ErrorType = "client"
 	ErrorTypeServer           ErrorType = "server"
 	ErrorTypeRateLimit        ErrorType = "rate_limit"
-	ErrorTypeParse            ErrorType = "parse"
 	ErrorTypeResponseTooLarge ErrorType = "response_too_large"
 	ErrorTypeUnknown          ErrorType = "unknown"
 )

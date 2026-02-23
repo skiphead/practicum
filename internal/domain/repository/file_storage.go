@@ -515,8 +515,14 @@ func (s *cachedFileStorage) CompactFile() error {
 		return fmt.Errorf("error creating temp file: %w", err)
 	}
 	defer func() {
-		tempFile.Close()
-		os.Remove(tempPath) // Clean up temp file on error
+		err = tempFile.Close()
+		if err != nil {
+			return
+		}
+		err = os.Remove(tempPath)
+		if err != nil {
+			return
+		} // Clean up temp file on error
 	}()
 
 	writer := bufio.NewWriter(tempFile)

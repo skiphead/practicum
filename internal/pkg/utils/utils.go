@@ -4,9 +4,7 @@ package utils
 
 import (
 	"crypto/rand"
-	"fmt"
 	"math/big"
-	"net"
 	"net/url"
 	"strings"
 )
@@ -71,21 +69,4 @@ func GenerateRandomKey() string {
 		buf[i] = randomCharset[randIndex.Int64()]
 	}
 	return string(buf)
-}
-
-// ParseCIDR проверяет и парсит CIDR из строки
-func ParseCIDR(cidrStr string) (*net.IPNet, error) {
-	// Удаляем пробелы
-	cidrStr = strings.TrimSpace(cidrStr)
-
-	if cidrStr == "" {
-		return nil, fmt.Errorf("пустая строка CIDR")
-	}
-
-	_, ipnet, err := net.ParseCIDR(cidrStr)
-	if err != nil {
-		return nil, fmt.Errorf("неверный формат CIDR: %w", err)
-	}
-
-	return ipnet, nil
 }

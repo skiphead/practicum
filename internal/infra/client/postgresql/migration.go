@@ -51,7 +51,7 @@ func MigrationsWithDI(db *sql.DB, migrationDir string, gooseWrapper GooseWrapper
 
 // Migrations runs database migrations from the specified directory
 func Migrations(db *sql.DB, migrationDir string) error {
-	fs := os.DirFS(migrationDir)
+	fsDir := os.DirFS(migrationDir)
 	wrapper := RealGooseWrapper{}
-	return MigrationsWithDI(db, migrationDir, wrapper, fs)
+	return MigrationsWithDI(db, migrationDir, wrapper, fsDir)
 }
