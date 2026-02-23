@@ -117,10 +117,6 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 
 	// Set defaults for empty fields (lowest priority)
-	if config.DatabaseDSN == "" {
-		config.DatabaseDSN = "user=postgres password=postgres host=localhost port=5432 database=pgx_test sslmode=disable"
-	}
-
 	if config.ServerAddr == "" {
 		config.ServerAddr = "localhost:8080"
 	}
