@@ -17,13 +17,13 @@ import (
 //   - urls: Slice of batch URL requests to check for duplicates
 //
 // Returns:
-//   - []entity.ShortURL: Slice of existing URL entities that match the provided URLs
+//   - []entity.ShortURL: Slice of existing URL entity that match the provided URLs
 //   - error: Database query or scanning error if operation fails
 //
 // The method:
 // 1. Deduplicates the input URLs to avoid redundant database checks
 // 2. Builds a parameterized IN clause query for efficient batch lookup
-// 3. Returns full ShortURL entities for any duplicates found
+// 3. Returns full ShortURL entity for any duplicates found
 //
 // Note: This method only checks for exact URL matches, not short code collisions.
 func (r *storageRepository) FindDuplicateURLs(ctx context.Context, urls []entity.BatchShortenRequest) ([]entity.ShortURL, error) {

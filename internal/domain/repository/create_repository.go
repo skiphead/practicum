@@ -8,7 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/skiphead/practicum/internal/domain/entity"
-	"github.com/skiphead/practicum/pkg/utils"
+	"github.com/skiphead/practicum/internal/pkg/utils"
 )
 
 // Create creates a new shortened URL record in the database.
@@ -64,7 +64,7 @@ func (r *storageRepository) Create(ctx context.Context, userID, shortCode, origi
 //   - batchSize: Maximum number of records to insert per database batch (uses default if ≤0)
 //
 // Returns:
-//   - []entity.ShortURL: Slice of created URL entities
+//   - []entity.ShortURL: Slice of created URL entity
 //   - error: Database or transaction error if batch creation fails
 //
 // Each URL in the batch gets a unique short code and the same expiration date.
@@ -116,7 +116,7 @@ func (r *storageRepository) CreateBatch(
 //   - batch: Slice of batch request items to insert
 //
 // Returns:
-//   - []entity.ShortURL: Created URL entities from this batch
+//   - []entity.ShortURL: Created URL entity from this batch
 //   - error: Database error if insertion fails
 //
 // Each URL gets a generated short code and the default expiration time.
@@ -153,14 +153,14 @@ func (r *storageRepository) insertBatch(
 	return r.scanBatchResults(rows)
 }
 
-// scanBatchResults scans database rows into ShortURL entities.
+// scanBatchResults scans database rows into ShortURL entity.
 // It processes the result set from a batch insertion query.
 //
 // Parameters:
 //   - rows: Database rows from a batch insertion query
 //
 // Returns:
-//   - []entity.ShortURL: Scanned URL entities
+//   - []entity.ShortURL: Scanned URL entity
 //   - error: Scanning or iteration error if any
 func (r *storageRepository) scanBatchResults(rows pgx.Rows) ([]entity.ShortURL, error) {
 	var results []entity.ShortURL

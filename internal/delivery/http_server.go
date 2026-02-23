@@ -10,11 +10,10 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/skiphead/practicum/internal/infra/config"
 	"go.uber.org/zap"
 
 	_ "net/http/pprof" // Import pprof for profiling endpoints
-
-	"github.com/skiphead/practicum/infra/config"
 )
 
 // Server represents an HTTP server with Chi router and graceful shutdown capabilities.

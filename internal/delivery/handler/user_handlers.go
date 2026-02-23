@@ -1,4 +1,4 @@
-// Package handler provides HTTP handlers for URL shortening service.
+// Package handler provides HTTP handler for URL shortening service.
 // It handles creation of short URLs via both JSON API and plain text endpoints,
 // retrieval of user's URLs, batch deletion, and redirection to original URLs.
 package handler

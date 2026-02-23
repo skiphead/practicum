@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/skiphead/practicum/pkg/transport/httpclient"
+	"github.com/skiphead/practicum/internal/pkg/transport/httpclient"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 )

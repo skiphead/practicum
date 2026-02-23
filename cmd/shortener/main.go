@@ -10,12 +10,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
-	"github.com/skiphead/practicum/infra/client/postgresql"
-	"github.com/skiphead/practicum/infra/config"
 	"github.com/skiphead/practicum/internal/audit"
 	"github.com/skiphead/practicum/internal/delivery"
 	"github.com/skiphead/practicum/internal/delivery/handler"
+	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/internal/domain/repository"
+	"github.com/skiphead/practicum/internal/infra/client/postgresql"
+	config2 "github.com/skiphead/practicum/internal/infra/config"
 	"github.com/skiphead/practicum/internal/usecase"
 	"go.uber.org/zap"
 
@@ -48,8 +49,20 @@ func main() {
 	store := initFileStorage(cfg)
 	storageRepo := initDatabase(cfg)
 
+	// Инициализируем репозиторий (Infrastructure)
+	subnet, err := entity.NewSubnetEntity(cfg.TrustedSubnet)
+	if err != nil {
+		logger.Fatal("failed to parse trusted_subnet", zap.Error(err))
+	}
+
+	ipCheckerRepo := repository.NewIPCheckerRepository(subnet)
+
+	// Инициализируем use case (Application)
+	ipCheckerUseCase := usecase.NewIPCheckerUseCase(ipCheckerRepo)
+
 	h := handler.NewURLHandler(
 		usecase.NewStorageUseCase(cfg.BaseURL, *store, *storageRepo),
+		ipCheckerUseCase,
 		cfg.ServerAddr,
 		cfg.BaseURL,
 		cfg.SessionKey,
@@ -115,7 +128,7 @@ func runServer(server *delivery.Server) {
 }
 
 // initFileStorage creates file-based URL storage.
-func initFileStorage(cfg *config.Config) *repository.FileStorage {
+func initFileStorage(cfg *config2.Config) *repository.FileStorage {
 	store, err := repository.NewCachedFileStorage(cfg.FileStoragePath)
 	if err != nil {
 		zap.L().Fatal("File storage initialization failed", zap.Error(err))
@@ -124,7 +137,7 @@ func initFileStorage(cfg *config.Config) *repository.FileStorage {
 }
 
 // initDatabase establishes PostgreSQL connection and runs migrations.
-func initDatabase(cfg *config.Config) *repository.URLRepository {
+func initDatabase(cfg *config2.Config) *repository.URLRepository {
 	pool, connErr := pgxpool.New(context.Background(), cfg.DatabaseDSN)
 	if connErr != nil {
 		zap.L().Error("pgxpool initialization failed", zap.Error(connErr))
@@ -141,7 +154,7 @@ func initDatabase(cfg *config.Config) *repository.URLRepository {
 }
 
 // initServer creates an HTTP server with Chi router.
-func initServer(cfg *config.Config, handler *handler.URLHandler) *delivery.Server {
+func initServer(cfg *config2.Config, handler *handler.URLHandler) *delivery.Server {
 	srv, err := delivery.NewServerChi(cfg, handler.ChiMux())
 	if err != nil {
 		zap.L().Fatal("Server creation failed", zap.Error(err))
@@ -150,7 +163,7 @@ func initServer(cfg *config.Config, handler *handler.URLHandler) *delivery.Serve
 }
 
 // loadConfig reads configuration from YAML file or uses defaults.
-func loadConfig() *config.Config {
+func loadConfig() *config2.Config {
 	pathConfig := "configs/config.json"
 
 	var flagConfig string
@@ -164,9 +177,9 @@ func loadConfig() *config.Config {
 		pathConfig = flagConfig
 	}
 
-	cfg, err := config.LoadConfig(pathConfig)
+	cfg, err := config2.LoadConfig(pathConfig)
 	if err != nil {
-		cfg = config.NewDefaultConfig()
+		cfg = config2.NewDefaultConfig()
 		zap.L().Info("Using default configuration after failed config load",
 			zap.Error(err),
 			zap.String("config_path", pathConfig))
@@ -179,7 +192,7 @@ func loadConfig() *config.Config {
 }
 
 // initAudit sets up the audit logging system.
-func initAudit(cfg *config.Config) *audit.Adapter {
+func initAudit(cfg *config2.Config) *audit.Adapter {
 	auditCfg := audit.Config{
 		FilePath:     cfg.AuditFile,
 		HTTPEndpoint: cfg.AuditURL,

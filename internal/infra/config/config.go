@@ -21,6 +21,7 @@ type Config struct {
 	PathCert        string `yaml:"path_cert" json:"path_cert"`
 	PathKey         string `yaml:"path_key" json:"path_key"`
 	PprofPort       string `yaml:"pprof_port" json:"pprof_port" env:"PPROF_PORT"` // Порт для pprof сервера
+	TrustedSubnet   string `yaml:"trusted_subnet" json:"trusted_subnet"`
 }
 
 // NewDefaultConfig creates a new Config instance with default values.

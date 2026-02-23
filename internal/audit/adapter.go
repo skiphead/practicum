@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/skiphead/practicum/infra/audit"
-	"github.com/skiphead/practicum/pkg/transport/httpclient"
+	audit2 "github.com/skiphead/practicum/internal/infra/audit"
+	"github.com/skiphead/practicum/internal/pkg/transport/httpclient"
 	"go.uber.org/zap"
 )
 
@@ -81,8 +81,8 @@ type Event struct {
 // Adapter adapts audit events for delivery to different receivers (file, HTTP).
 // It provides asynchronous event processing with batching for HTTP transport.
 type Adapter struct {
-	fileLogger *audit.Logger  // File logger instance
-	httpClient audit.Client   // HTTP client for remote audit logging
+	fileLogger *audit2.Logger // File logger instance
+	httpClient audit2.Client  // HTTP client for remote audit logging
 	config     Config         // Adapter configuration
 	enabled    bool           // Whether audit is currently enabled
 	mutex      sync.RWMutex   // Mutex for thread-safe state changes
@@ -120,7 +120,7 @@ func NewAdapter(cfg Config) (*Adapter, error) {
 
 	// Initialize file logger only if file path is specified
 	if cfg.FilePath != "" {
-		adapter.fileLogger, err = audit.GetInstance(cfg.FilePath)
+		adapter.fileLogger, err = audit2.GetInstance(cfg.FilePath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create file logger: %w", err)
 		}
@@ -138,7 +138,7 @@ func NewAdapter(cfg Config) (*Adapter, error) {
 			return nil, fmt.Errorf("failed to create HTTP client: %w", err)
 		}
 
-		adapter.httpClient = audit.NewService(httpClient, audit.ServiceConfig{
+		adapter.httpClient = audit2.NewService(httpClient, audit2.ServiceConfig{
 			MaxBatchSize: cfg.MaxBatchSize,
 		})
 	}
@@ -233,7 +233,7 @@ func (a *Adapter) processWithoutBatching() {
 // processWithBatching processes events with batching for HTTP transport.
 // Implements time-based and size-based batching for efficient HTTP transmission.
 func (a *Adapter) processWithBatching() {
-	batch := make([]*audit.CreateAuditRequest, 0, a.config.MaxBatchSize)
+	batch := make([]*audit2.CreateAuditRequest, 0, a.config.MaxBatchSize)
 	batchTimer := time.NewTimer(1 * time.Second)
 
 	defer batchTimer.Stop()
@@ -283,7 +283,7 @@ func (a *Adapter) processWithBatching() {
 
 // flushBatch sends a batch of audit events.
 // This is a wrapper method for different batch types.
-func (a *Adapter) flushBatch(batch []*audit.CreateAuditRequest) {
+func (a *Adapter) flushBatch(batch []*audit2.CreateAuditRequest) {
 	if len(batch) == 0 {
 		return
 	}
@@ -294,7 +294,7 @@ func (a *Adapter) flushBatch(batch []*audit.CreateAuditRequest) {
 
 // flushBatchHTTP sends a batch of audit events via HTTP.
 // Implements retry logic and error handling.
-func (a *Adapter) flushBatchHTTP(batch []*audit.CreateAuditRequest) {
+func (a *Adapter) flushBatchHTTP(batch []*audit2.CreateAuditRequest) {
 	if a.httpClient == nil || len(batch) == 0 {
 		return
 	}
@@ -322,13 +322,13 @@ func (a *Adapter) logToFile(event *Event) error {
 	case "follow":
 		return a.fileLogger.LogFollow(event.UserID, event.URL)
 	default:
-		return a.fileLogger.Log(audit.LogAction(event.Action), event.UserID, event.URL)
+		return a.fileLogger.Log(audit2.LogAction(event.Action), event.UserID, event.URL)
 	}
 }
 
 // convertToAuditRequest converts an adapter Event to an audit service request.
-func (a *Adapter) convertToAuditRequest(event *Event) *audit.CreateAuditRequest {
-	return &audit.CreateAuditRequest{
+func (a *Adapter) convertToAuditRequest(event *Event) *audit2.CreateAuditRequest {
+	return &audit2.CreateAuditRequest{
 		TS:     int(event.Timestamp),
 		Action: event.Action,
 		UserID: event.UserID,

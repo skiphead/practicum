@@ -217,7 +217,7 @@ func (s *cachedFileStorage) Save(userID, correlationID, key, url string) error {
 //
 // Parameters:
 //   - ctx: Context for timeout and cancellation
-//   - in: Slice of ShortURL entities to save
+//   - in: Slice of ShortURL entity to save
 //
 // Returns:
 //   - error: If file write fails

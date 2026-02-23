@@ -90,7 +90,7 @@ func (r *storageRepository) GetByOriginalURL(ctx context.Context, originalURL st
 //   - userID: Unique identifier of the user whose URLs to retrieve
 //
 // Returns:
-//   - []entity.ShortURL: Slice of URL entities belonging to the user
+//   - []entity.ShortURL: Slice of URL entity belonging to the user
 //   - error: Database query or scanning error if retrieval fails
 //
 // The method returns all URLs for the user regardless of their active status.

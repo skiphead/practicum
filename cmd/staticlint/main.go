@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/skiphead/practicum/pkg/exitcheck"
+	"github.com/skiphead/practicum/internal/pkg/exitcheck"
 	"go.uber.org/zap"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/multichecker"

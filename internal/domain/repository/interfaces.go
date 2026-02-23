@@ -27,7 +27,7 @@ type URLRepository interface {
 // Package-level error definitions for repository operations.
 var (
 	// ErrNotFound indicates that a requested resource was not found in the repository.
-	// This error is returned when queries for specific entities yield no results.
+	// This error is returned when queries for specific entity yield no results.
 	ErrNotFound = errors.New("not found")
 )
 
@@ -65,7 +65,7 @@ type URLCreator interface {
 // BatchURLCreator defines the interface for batch URL creation.
 type BatchURLCreator interface {
 	// CreateBatch saves multiple shortened URLs in a batch operation.
-	// It processes URLs efficiently and returns the created entities.
+	// It processes URLs efficiently and returns the created entity.
 	//
 	// Parameters:
 	//   - ctx: Context for timeout and cancellation
@@ -74,7 +74,7 @@ type BatchURLCreator interface {
 	//   - batchSize: Number of records to process per database batch
 	//
 	// Returns:
-	//   - []entity.ShortURL: Created URL entities
+	//   - []entity.ShortURL: Created URL entity
 	//   - error: Storage or validation error if batch creation fails
 	CreateBatch(ctx context.Context, userID string, in []entity.BatchShortenRequest, batchSize int) ([]entity.ShortURL, error)
 }
@@ -119,7 +119,7 @@ type UserURLRetriever interface {
 	//   - userID: User ID to search for
 	//
 	// Returns:
-	//   - []entity.ShortURL: Slice of URL entities belonging to the user
+	//   - []entity.ShortURL: Slice of URL entity belonging to the user
 	//   - error: Storage error if retrieval fails
 	GetByUserID(ctx context.Context, userID string) ([]entity.ShortURL, error)
 }
@@ -164,7 +164,7 @@ type DuplicateFinder interface {
 	//   - urls: Slice of batch URL requests to check
 	//
 	// Returns:
-	//   - []entity.ShortURL: Existing URL entities that match the provided URLs
+	//   - []entity.ShortURL: Existing URL entity that match the provided URLs
 	//   - error: Storage error if lookup fails
 	FindDuplicateURLs(ctx context.Context, urls []entity.BatchShortenRequest) ([]entity.ShortURL, error)
 }

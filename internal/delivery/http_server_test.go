@@ -3,11 +3,11 @@ package delivery
 import (
 	"testing"
 
-	"github.com/skiphead/practicum/infra/client/postgresql"
-	"github.com/skiphead/practicum/infra/config"
 	"github.com/skiphead/practicum/internal/audit"
 	"github.com/skiphead/practicum/internal/delivery/handler"
 	"github.com/skiphead/practicum/internal/domain/repository"
+	"github.com/skiphead/practicum/internal/infra/client/postgresql"
+	"github.com/skiphead/practicum/internal/infra/config"
 	"github.com/skiphead/practicum/internal/usecase"
 )
 
