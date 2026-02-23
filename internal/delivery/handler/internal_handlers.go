@@ -60,5 +60,8 @@ func (h *URLHandler) statsHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Note: Error handling for JSON encoding is omitted for brevity
 	// In production, should check and handle json.NewEncoder.Encode() error
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		return
+	}
 }
