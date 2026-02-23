@@ -75,7 +75,7 @@ func setupTestHandler() (*handler.URLHandler, *MockURLUseCase) {
 	mockStorage := new(MockURLUseCase)
 	// Создаем пустой аудит адаптер для тестов
 	auditAdapter := &audit.Adapter{}
-	handler := handler.NewURLHandler(mockStorage, "localhost:8080", "http://localhost:8080", "secret", auditAdapter)
+	handler := handler.NewURLHandler(mockStorage, nil, "localhost:8080", "http://localhost:8080", "secret", auditAdapter)
 	return handler, mockStorage
 }
 
