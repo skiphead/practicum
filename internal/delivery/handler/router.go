@@ -1,130 +1,212 @@
 package handler
 
 import (
-	"log"
+	"context"
+	"net"
 	"net/http"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	mw "github.com/skiphead/practicum/internal/middleware"
 	"go.uber.org/zap"
 )
 
-// ChiMux creates and configures a Chi router with middleware and routes for the URL shortening service.
+// Типизированные ключи контекста для избежания коллизий
+type contextKey string
+
+const (
+	requestIDKey contextKey = "request_id"
+	clientIPKey  contextKey = "client_ip"
+	ipSourceKey  contextKey = "ip_source"
+)
+
+// ChiMux создает и настраивает Chi роутер с middleware и маршрутами для сервиса сокращения URL.
 //
-// Middleware Stack Order (applied in sequence):
-//  1. CompressionMiddleware - Handles gzip compression for requests/responses
-//  2. sessionMiddleware - Manages user sessions and authentication via cookies
-//  3. LoggingMiddleware - Logs request details (method, path, duration, status)
+// Порядок middleware (применяются последовательно):
+//  1. requestIDMiddleware - добавляет request ID в контекст для трассировки
+//  2. LoggingMiddleware - логирует детали запроса (применяется ко всем маршрутам)
+//  3. sessionMiddleware - управляет пользовательскими сессиями и аутентификацией через cookies
+//  4. CompressionMiddleware - обрабатывает gzip сжатие для запросов/ответов
 //
-// Route Groups:
+// Группы маршрутов:
 //
-//	Public Routes (all requests):
-//	  GET    /{key}                    - Redirect to original URL by short key
-//	  GET    /api/user/urls             - Get all shortened URLs for current user
-//	  DELETE /api/user/urls             - Delete user's URLs (batch operation)
-//	  POST   /                          - Create short URL via form submission
-//	  POST   /api/shorten                - Create short URL via JSON API
-//	  POST   /api/shorten/batch           - Create multiple short URLs via batch API
-//	  GET    /ping                       - Database health check endpoint
+//	Публичные маршруты (доступны всем):
+//	  GET    /ping                       - проверка здоровья базы данных
+//	  GET    /{key}                      - редирект на оригинальный URL по короткому ключу
 //
-//	Protected Internal Routes (require IP validation):
-//	  GET    /api/internal/stats          - Get service statistics (requires trusted IP)
-//	  (Additional internal routes can be added here)
+//	Защищенные маршруты (с сессией и сжатием):
+//	  GET    /api/user/urls               - получение всех URL текущего пользователя
+//	  DELETE /api/user/urls                - удаление URL пользователя (пакетная операция)
+//	  POST   /                             - создание короткого URL через форму
+//	  POST   /api/shorten                   - создание короткого URL через JSON API
+//	  POST   /api/shorten/batch              - создание нескольких коротких URL через batch API
 //
-// Returns:
-//   - *chi.Mux: Fully configured router with all middleware and routes registered
-//
-// Notes:
-//   - All routes are automatically covered by audit logging through the LoggingMiddleware
-//   - IP validation for internal routes uses X-Real-IP header (set by proxy/load balancer)
-//   - Session middleware handles anonymous users by creating sessions when needed
-//   - The router is ready to be used with http.Server
+//	Защищенные внутренние маршруты (требуют валидации IP):
+//	  GET    /api/internal/stats            - получение статистики сервиса (требуется доверенный IP)
 func (h *URLHandler) ChiMux() *chi.Mux {
 	r := chi.NewRouter()
 
-	// Public routes - accessible to all clients
-	r.Group(func(r chi.Router) {
-		r.Use(mw.CompressionMiddleware)
-		r.Use(h.sessionMiddleware)
-		r.Use(mw.LoggingMiddleware)
+	// Глобальные middleware - применяются ко всем маршрутам
+	r.Use(h.requestIDMiddleware) // Добавляет request ID для трассировки
+	r.Use(mw.LoggingMiddleware)  // Логирует все запросы (включая /ping и /{key})
 
-		// Routes (all covered by audit through middleware)
-		r.Get("/{key}", h.RedirectURL)                         // GET /{id} - redirect to original URL
-		r.Get("/api/user/urls", h.getAPIUserUrls)              // GET /api/user/urls - get user's URLs
-		r.Delete("/api/user/urls", h.deleteAPIUserUrls)        // DELETE /api/user/urls - delete user's URLs
-		r.Post("/", h.createShortURL)                          // POST / - create short URL via form
-		r.Post("/api/shorten", h.CreateShortAPIURL)            // POST /api/shorten - create short URL via JSON API
-		r.Post("/api/shorten/batch", h.createBatchShortAPIURL) // POST /api/shorten/batch - batch URL creation
-		r.Get("/ping", h.pingDB)                               // GET /ping - database health check
+	// Маршруты без middleware сессии и сжатия
+	r.Get("/ping", h.pingDB)       // GET /ping - проверка БД
+	r.Get("/{key}", h.RedirectURL) // GET /{key} - редирект
+
+	// Защищенные маршруты - с middleware сессии и сжатия
+	r.Group(func(r chi.Router) {
+		r.Use(h.sessionMiddleware)
+		r.Use(mw.CompressionMiddleware)
+
+		// Эндпоинты для создания URL
+		r.Post("/", h.createShortURL)                          // POST / - создать короткий URL через форму
+		r.Post("/api/shorten", h.CreateShortAPIURL)            // POST /api/shorten - создать через JSON API
+		r.Post("/api/shorten/batch", h.createBatchShortAPIURL) // POST /api/shorten/batch - пакетное создание
 	})
 
-	// Protected internal routes - require trusted IP validation
 	r.Group(func(r chi.Router) {
-		// Apply IPCheckMiddleware only to this group of routes
-		r.Use(h.IPCheckMiddleware)
+		r.Use(h.sessionMiddleware)
+		// Эндпоинты для работы с URL пользователя
+		r.Get("/api/user/urls", h.getAPIUserUrls)       // GET /api/user/urls - получить URL пользователя
+		r.Delete("/api/user/urls", h.deleteAPIUserUrls) // DELETE /api/user/urls - удалить URL пользователя
+	})
 
-		// Statistics endpoint requiring IP validation
+	// Защищенные внутренние маршруты - требуют валидации IP
+	r.Group(func(r chi.Router) {
+		r.Use(h.IPCheckMiddleware) // Применяем валидацию IP только к этой группе
+		r.Use(h.sessionMiddleware) // Сессия всё ещё нужна для контекста пользователя
+		r.Use(mw.CompressionMiddleware)
+
+		// Эндпоинт статистики, требующий валидации IP
 		r.Get("/api/internal/stats", h.statsHandler)
-
-		// Additional protected routes can be added here
-		// r.Get("/api/internal/other", h.OtherInternalHandler)
 	})
 
 	return r
 }
 
-// IPCheckMiddleware validates that the client IP belongs to the trusted subnet
-// before allowing access to protected internal endpoints.
+// requestIDMiddleware добавляет уникальный ID запроса в контекст для трассировки
+func (h *URLHandler) requestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestID := uuid.New().String()
+		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+		w.Header().Set("X-Request-ID", requestID)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// getRequestID извлекает request ID из контекста с использованием типизированного ключа
+func getRequestID(ctx context.Context) string {
+	if id, ok := ctx.Value(requestIDKey).(string); ok {
+		return id
+	}
+	return "unknown"
+}
+
+// parseRemoteAddr парсит RemoteAddr для извлечения IP-адреса с поддержкой IPv6
+func parseRemoteAddr(remoteAddr string) string {
+	// Пытаемся распарсить host:port
+	host, _, err := net.SplitHostPort(remoteAddr)
+	if err == nil {
+		return host
+	}
+
+	// Если не получилось распарсить, возвращаем как есть (может быть уже IP без порта)
+	// Это может случиться, если сервер настроен иначе или это IPv6-адрес в квадратных скобках
+	if strings.HasPrefix(remoteAddr, "[") && strings.Contains(remoteAddr, "]") {
+		// Пробуем извлечь IPv6-адрес из скобок
+		end := strings.Index(remoteAddr, "]")
+		if end > 1 {
+			return remoteAddr[1:end]
+		}
+	}
+
+	return remoteAddr
+}
+
+// IPCheckMiddleware проверяет, что IP клиента принадлежит доверенной подсети
+// перед разрешением доступа к защищенным внутренним эндпоинтам.
 //
-// The middleware extracts the client IP from the X-Real-IP header, which should
-// be set by a reverse proxy or load balancer. Direct access without this header
-// will result in access denial.
+// Middleware извлекает IP клиента из заголовка X-Real-IP, который должен
+// устанавливаться обратным прокси или балансировщиком нагрузки. Если X-Real-IP
+// отсутствует, используется RemoteAddr с правильным парсингом через net.SplitHostPort.
 //
-// Flow:
-//  1. Extract IP from X-Real-IP header
-//  2. Validate IP format and check against trusted subnet using IPCheckerUseCase
-//  3. Allow access if IP is trusted, otherwise return 403 Forbidden
+// Процесс:
+//  1. Извлечение IP из заголовка X-Real-IP или парсинг RemoteAddr через net.SplitHostPort
+//  2. Проверка формата IP и проверка по доверенной подсети через IPCheckerUseCase
+//  3. Разрешение доступа если IP доверенный, иначе возврат 403 Forbidden
 //
-// Headers:
-//   - X-Real-IP: Required header containing the actual client IP address
+// Заголовки:
+//   - X-Real-IP: Опциональный заголовок с реальным IP клиента (устанавливается прокси)
 //
-// Status Codes:
-//   - 200 OK: Request proceeds to the next handler (IP is trusted)
-//   - 403 Forbidden: IP is not in trusted subnet or X-Real-IP header is missing
+// Коды статуса:
+//   - 200 OK: Запрос передается следующему обработчику (IP доверенный)
+//   - 403 Forbidden: IP не в доверенной подсети
+//   - 500 Internal Server Error: Ошибка при проверке IP
 //
-// Logging:
-//   - Logs access attempts with client IP and any validation errors
-//   - Uses zap logger for structured logging of successful validations
-//
-// Usage:
-//
-//	r.Group(func(r chi.Router) {
-//	    r.Use(h.IPCheckMiddleware)
-//	    r.Get("/api/internal/stats", h.statsHandler)
-//	})
-//
-// Security Notes:
-//   - Never trust X-Real-IP header directly from internet-facing clients
-//   - Ensure reverse proxy overwrites this header and strips it from client requests
-//   - Consider adding X-Forwarded-For support if behind multiple proxies
+// Логирование:
+//   - Использует zap логгер с контекстом запроса и структурированным логированием
+//   - Логирует попытки доступа с IP клиента, результатом проверки и ID запроса
+//   - X-Request-ID автоматически включается во все логи через контекст
 func (h *URLHandler) IPCheckMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Get IP from header (set by reverse proxy)
-		realIP := r.Header.Get("X-Real-IP")
-		realIP = strings.TrimSpace(realIP)
+		// Получаем ID запроса из контекста для трассировки
+		requestID := getRequestID(r.Context())
 
-		// Check IP through use case
-		isTrusted, err := h.ipCheckerUseCase.CheckIP(realIP)
-		if err != nil || !isTrusted {
-			log.Printf("Access denied for internal endpoint from IP: %s, error: %v", realIP, err)
-			http.Error(w, "Forbidden: IP not in trusted subnet", http.StatusForbidden)
+		// Получаем логгер с контекстом
+		logger := h.logger.With(
+			zap.String("request_id", requestID),
+			zap.String("middleware", "ip_check"),
+			zap.String("path", r.URL.Path),
+		)
+
+		// Пытаемся получить IP из заголовка X-Real-IP сначала (устанавливается прокси)
+		clientIP := r.Header.Get("X-Real-IP")
+		clientIP = strings.TrimSpace(clientIP)
+		ipSource := "X-Real-IP"
+
+		// Используем RemoteAddr если X-Real-IP отсутствует
+		if clientIP == "" {
+			// Используем net.SplitHostPort для правильного парсинга RemoteAddr (поддерживает IPv6)
+			clientIP = parseRemoteAddr(r.RemoteAddr)
+			ipSource = "RemoteAddr"
+			logger.Debug("Заголовок X-Real-IP отсутствует, используем RemoteAddr",
+				zap.String("remote_addr", r.RemoteAddr),
+				zap.String("parsed_ip", clientIP))
+		}
+
+		// Проверяем IP через use case
+		isTrusted, err := h.ipCheckerUseCase.CheckIP(clientIP)
+
+		// Раздельная обработка ошибок для лучшей наблюдаемости
+		if err != nil {
+			logger.Error("Ошибка при проверке IP",
+				zap.String("client_ip", clientIP),
+				zap.String("ip_source", ipSource),
+				zap.Error(err))
+			http.Error(w, "Внутренняя ошибка сервера при проверке IP", http.StatusInternalServerError)
 			return
 		}
 
-		zap.L().Sugar().Infow("IP check passed", "ip", realIP)
+		if !isTrusted {
+			logger.Warn("Доступ запрещен для недоверенного IP",
+				zap.String("client_ip", clientIP),
+				zap.String("ip_source", ipSource))
+			http.Error(w, "Доступ запрещен: IP не в доверенной подсети", http.StatusForbidden)
+			return
+		}
 
-		// Pass control to the next handler
-		next.ServeHTTP(w, r)
+		// Логируем успешную проверку
+		logger.Info("Проверка IP пройдена",
+			zap.String("client_ip", clientIP),
+			zap.String("ip_source", ipSource))
+
+		// Добавляем IP клиента в контекст для downstream обработчиков (с типизированными ключами)
+		ctx := context.WithValue(r.Context(), clientIPKey, clientIP)
+		ctx = context.WithValue(ctx, ipSourceKey, ipSource)
+
+		// Передаем управление следующему обработчику
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

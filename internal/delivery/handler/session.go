@@ -2,12 +2,11 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/golang-jwt/jwt/v4"
-	"github.com/google/uuid"
+	"github.com/skiphead/practicum/internal/pkg/utils"
 	"go.uber.org/zap"
 )
 
@@ -16,104 +15,59 @@ const (
 	sessionDuration   = 24 * time.Hour
 )
 
-type contextKey string
-
 const (
-	keyUserID contextKey = "user_id"
+	SessionCookieName            = "session_token"
+	SessionDuration              = 24 * time.Hour
+	KeyUserID         contextKey = "user_id"
 )
 
 // SessionClaims represents JWT claims for session management.
-// It extends jwt.RegisteredClaims with a UserID field.
 type SessionClaims struct {
 	jwt.RegisteredClaims
 	UserID string `json:"user_id"`
 }
 
-// sessionMiddleware is an HTTP middleware that handles user session management.
-// It checks for a valid session cookie, validates JWT tokens, and creates new sessions when needed.
-// The middleware extracts the UserID from the JWT token and stores it in the request context.
-// If no valid session exists, it creates a new one with a generated UserID.
+// TokenConfig holds configuration for token operations.
+type TokenConfig struct {
+	SessionKey string
+}
+
+// sessionMiddleware — HTTP middleware для управления сессиями.
 func (h *URLHandler) sessionMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var userID string
-
-		cookie, err := r.Cookie(sessionCookieName)
+		userID, err := h.getOrCreateSession(w, r)
 		if err != nil {
-			userID = h.createNewSession(w)
-			ctx := context.WithValue(r.Context(), keyUserID, userID)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			http.Error(w, "Session error", http.StatusInternalServerError)
 			return
 		}
 
-		token, err := jwt.ParseWithClaims(cookie.Value, &SessionClaims{}, func(token *jwt.Token) (interface{}, error) {
-			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-			}
-			return []byte(h.sessionKey), nil
-		})
-
-		if err != nil || !token.Valid {
-			userID = h.createNewSession(w)
-			ctx := context.WithValue(r.Context(), keyUserID, userID)
-			next.ServeHTTP(w, r.WithContext(ctx))
-			return
-		}
-
-		if claims, ok := token.Claims.(*SessionClaims); ok {
-			if claims.UserID == "" {
-				http.Error(w, "Invalid session token", http.StatusUnauthorized)
-				return
-			}
-			userID = claims.UserID
-		} else {
-			userID = h.createNewSession(w)
-		}
-
-		ctx := context.WithValue(r.Context(), keyUserID, userID)
+		ctx := utils.ContextWithUserID(r.Context(), userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
-// createNewSession generates a new session for a user.
-// It creates a unique UserID, generates a JWT token with session claims,
-// and sets an HTTP cookie with the token.
-// Returns the generated UserID.
-func (h *URLHandler) createNewSession(w http.ResponseWriter) string {
-	userID := uuid.New().String()
+// getOrCreateSession извлекает существующую сессию или создаёт новую.
+func (h *URLHandler) getOrCreateSession(w http.ResponseWriter, r *http.Request) (string, error) {
+	cfg := TokenConfig{SessionKey: h.sessionKey}
 
-	claims := SessionClaims{
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(sessionDuration)),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
-		},
-		UserID: userID,
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString([]byte(h.sessionKey))
+	// Попытка получить токен из cookie
+	tokenString, err := utils.GetSessionCookie(r)
 	if err != nil {
-		zap.L().Error("Failed to create JWT token", zap.Error(err))
-		return userID
+		// Cookie нет — создаём новую сессию
+		return utils.CreateNewSession(w, utils.TokenConfig(cfg))
 	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     sessionCookieName,
-		Value:    tokenString,
-		Path:     "/",
-		Expires:  time.Now().Add(sessionDuration),
-		HttpOnly: true,
-		Secure:   false,
-		SameSite: http.SameSiteLaxMode,
-	})
+	// Парсим и валидируем токен
+	claims, err := utils.ParseSessionToken(tokenString, utils.TokenConfig(cfg))
+	if err != nil {
+		zap.L().Debug("Invalid token, creating new session", zap.Error(err))
+		return utils.CreateNewSession(w, utils.TokenConfig(cfg))
+	}
 
-	return userID
+	return claims.UserID, nil
 }
 
-// getUserIDFromContext extracts the UserID from the request context.
-// Returns an empty string if the UserID is not found or cannot be cast to string.
+// getUserIDFromContext — хелпер для получения UserID из контекста.
 func (h *URLHandler) getUserIDFromContext(ctx context.Context) string {
-	if userID, ok := ctx.Value(keyUserID).(string); ok {
-		return userID
-	}
-	return ""
+	return utils.UserIDFromContext(ctx)
 }

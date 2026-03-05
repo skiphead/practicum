@@ -65,7 +65,7 @@ func (m *MockURLUseCase) IsDuplicateError(err error) bool {
 // Test helpers
 func setupTestHandler() (*URLHandler, *MockURLUseCase) {
 	mockStorage := new(MockURLUseCase)
-	handler := NewURLHandler(mockStorage, nil, "localhost:8080", "http://localhost:8080", "secret", &audit.Adapter{})
+	handler := NewURLHandler(mockStorage, nil, "localhost:8080", "http://localhost:8080", "secret", &audit.Adapter{}, nil)
 	return handler, mockStorage
 }
 
@@ -76,6 +76,6 @@ func createTestRequest(method, url string, body []byte) *http.Request {
 }
 
 func addUserContext(req *http.Request, userID string) *http.Request {
-	ctx := context.WithValue(req.Context(), keyUserID, userID)
+	ctx := context.WithValue(req.Context(), KeyUserID, userID)
 	return req.WithContext(ctx)
 }

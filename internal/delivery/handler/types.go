@@ -13,6 +13,7 @@ package handler
 import (
 	"github.com/skiphead/practicum/internal/audit"
 	"github.com/skiphead/practicum/internal/usecase"
+	"go.uber.org/zap"
 )
 
 // URLHandler provides HTTP handlers for URL shortening operations.
@@ -29,6 +30,7 @@ type URLHandler struct {
 	baseURL          string                    // Base URL for generating short URLs (e.g., "http://localhost:8080")
 	sessionKey       string                    // Secret key for session management and authentication
 	ipCheckerUseCase *usecase.IPCheckerUseCase // Use case for IP validation on internal endpoints
+	logger           *zap.Logger
 }
 
 // NewURLHandler creates a new URLHandler instance with all required dependencies.
@@ -80,6 +82,7 @@ func NewURLHandler(
 	ipCheck *usecase.IPCheckerUseCase,
 	serverAddr, baseURL, sessionKey string,
 	auditClient *audit.Adapter,
+	logger *zap.Logger,
 ) *URLHandler {
 	return &URLHandler{
 		storage:          storage,
@@ -88,5 +91,6 @@ func NewURLHandler(
 		sessionKey:       sessionKey,
 		auditClient:      auditClient,
 		ipCheckerUseCase: ipCheck,
+		logger:           logger,
 	}
 }

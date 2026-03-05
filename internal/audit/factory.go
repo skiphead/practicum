@@ -4,6 +4,11 @@ import (
 	"sync"
 )
 
+const (
+	ActionShorten = "shorten"
+	ActionFollow  = "follow"
+)
+
 // Factory manages the creation and lifecycle of audit adapters.
 // It implements a singleton-like pattern for adapter reuse based on configuration.
 type Factory struct {

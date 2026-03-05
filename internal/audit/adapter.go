@@ -14,6 +14,15 @@ import (
 	"go.uber.org/zap"
 )
 
+// Logger defines the interface for audit logging.
+// This allows mocking in tests and swapping implementations.
+type Logger interface {
+	LogEvent(ctx context.Context, event *Event) error
+}
+
+// Ensure Adapter implements Logger at compile time.
+var _ Logger = (*Adapter)(nil)
+
 // Config represents the configuration for the audit adapter.
 // It defines where audit events should be sent and how they should be processed.
 type Config struct {

@@ -66,7 +66,7 @@ func (h *URLHandler) CreateShortAPIURL(w http.ResponseWriter, r *http.Request) {
 
 	errAuditClient := h.auditClient.LogEvent(context.Background(), &audit.Event{
 		Timestamp: time.Now().Unix(),
-		Action:    "shorten",
+		Action:    audit.ActionShorten,
 		UserID:    "",
 		URL:       original.URL,
 	})
@@ -119,7 +119,7 @@ func (h *URLHandler) createShortURL(w http.ResponseWriter, r *http.Request) {
 
 	errAuditClient := h.auditClient.LogEvent(context.Background(), &audit.Event{
 		Timestamp: time.Now().Unix(),
-		Action:    "shorten",
+		Action:    audit.ActionShorten,
 		UserID:    "",
 		URL:       originalURL,
 	})
@@ -173,7 +173,7 @@ func (h *URLHandler) RedirectURL(w http.ResponseWriter, r *http.Request) {
 
 	errAuditClient := h.auditClient.LogEvent(context.Background(), &audit.Event{
 		Timestamp: time.Now().Unix(),
-		Action:    "follow",
+		Action:    audit.ActionFollow,
 		UserID:    data.UserID,
 		URL:       data.OriginalURL,
 	})

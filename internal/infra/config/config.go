@@ -10,7 +10,11 @@ import (
 // Config holds the application configuration loaded from YAML or environment variables.
 // It defines all configurable parameters for the URL shortener service.
 type Config struct {
-	ServerAddr      string `yaml:"server_addr" json:"server_addr"`             // HTTP server address (host:port)
+	ServerAddr      string `yaml:"server_addr" json:"server_addr"` // HTTP server address (host:port)
+	GRPCPort        int    `yaml:"grpc_port" json:"grpc_port"`
+	GRPCTLSEnabled  bool   `yaml:"grpc_tls_enabled" json:"grpc_tls_enabled"`
+	GRPCCertFile    string `yaml:"grpc_cert_file" json:"grpc_cert_file"`
+	GRPCKeyFile     string `yaml:"grpc_key_file" json:"grpc_key_file"`
 	BaseURL         string `yaml:"base_url" json:"base_url"`                   // Base URL for shortened links (e.g., http://localhost:8080)
 	FileStoragePath string `yaml:"file_storage_path" json:"file_storage_path"` // Path to file storage for URL persistence
 	DatabaseDSN     string `yaml:"database_dsn" json:"database_dsn"`           // PostgreSQL database connection string

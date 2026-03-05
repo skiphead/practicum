@@ -1,0 +1,17 @@
+edition = "2023";
+
+package auth;
+
+option go_package = "github.com/skiphead/practicum/pkg/api/v1/proto";
+
+service AuthService {
+  rpc CreateToken (CreateTokenRequest) returns (CreateTokenResponse);
+}
+
+message CreateTokenRequest {
+  string  user_id = 1;
+}
+
+message CreateTokenResponse {
+  string bearer_token = 1;
+}

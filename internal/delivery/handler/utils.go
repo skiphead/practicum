@@ -164,3 +164,11 @@ func (h *URLHandler) handleConflictError(w http.ResponseWriter, err error) bool 
 	}
 	return false
 }
+
+// GetUserIDFromContext — хелпер для извлечения UserID из контекста в обработчиках.
+// Можно использовать в handler-пакете.
+func GetUserIDFromContext(ctx context.Context) (string, bool) {
+	userID, ok := ctx.Value("user_id").(string)
+
+	return userID, ok
+}
