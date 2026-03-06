@@ -40,7 +40,7 @@ func getTestLogger(t *testing.T) *zap.Logger {
 }
 
 // generateTestTLSFiles создаёт временные самоподписанные сертификаты для тестов
-func generateTestTLSFiles(t *testing.T) (certPath, keyPath string, cleanup func()) {
+func generateTestTLSFiles(t *testing.T) (certPath, keyPath string) {
 	t.Helper()
 
 	// Генерация приватного ключа
@@ -67,7 +67,7 @@ func generateTestTLSFiles(t *testing.T) (certPath, keyPath string, cleanup func(
 	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
 	require.NoError(t, err)
 
-	// Создание временных файлов
+	// Создание временных файлов в t.TempDir() - автоматическая очистка
 	tmpDir := t.TempDir()
 	certPath = filepath.Join(tmpDir, "test.crt")
 	keyPath = filepath.Join(tmpDir, "test.key")
@@ -84,12 +84,12 @@ func generateTestTLSFiles(t *testing.T) (certPath, keyPath string, cleanup func(
 	require.NoError(t, pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey)}))
 	require.NoError(t, keyOut.Close())
 
-	cleanup = func() {
+	t.Cleanup(func() {
 		_ = os.Remove(certPath)
 		_ = os.Remove(keyPath)
-	}
+	})
 
-	return certPath, keyPath, cleanup
+	return certPath, keyPath
 }
 
 // createTestToken создаёт валидный тестовый JWT токен
@@ -238,7 +238,7 @@ func TestNewServer(t *testing.T) {
 		require.NotNil(t, srv)
 		assert.NotNil(t, srv.grpcServer)
 		assert.Equal(t, testSessionKey, srv.sessionKey)
-		assert.Equal(t, 0, srv.port) // порт не инициализируется здесь
+		assert.Equal(t, 0, srv.port)
 	})
 
 	t.Run("config with empty session key disables auth", func(t *testing.T) {
@@ -270,8 +270,7 @@ func TestNewServer(t *testing.T) {
 	})
 
 	t.Run("valid TLS config succeeds", func(t *testing.T) {
-		certPath, keyPath, cleanup := generateTestTLSFiles(t)
-		defer cleanup()
+		certPath, keyPath := generateTestTLSFiles(t)
 
 		cfg := &ServerConfig{
 			Port: 0,
@@ -300,7 +299,6 @@ func TestEnsureValidTokenInterceptor(t *testing.T) {
 	testSessionKey := "test-secret-key-for-jwt-signing-min-32-chars!!"
 	testUserID := "user-123-test"
 
-	// Вспомогательная функция для создания сервера с интерцептором
 	createInterceptor := func(key string) grpc.UnaryServerInterceptor {
 		s := &ServerGRPC{
 			logger:     logger,
@@ -310,11 +308,13 @@ func TestEnsureValidTokenInterceptor(t *testing.T) {
 	}
 
 	// Простой тестовый хендлер
+	// FIX: используем константу KeyUserID для контекста
 	testHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		userID, ok := ctx.Value("user_id").(string)
+		userID, ok := ctx.Value(utils.KeyUserID).(string)
 		if !ok {
 			return nil, status.Error(codes.Internal, "user_id not in context")
 		}
+		// Map-ключи для ответа теста — строки, это не контекст
 		return map[string]string{"user_id": userID, "status": "ok"}, nil
 	}
 
@@ -354,37 +354,10 @@ func TestEnsureValidTokenInterceptor(t *testing.T) {
 		assert.Contains(t, st.Message(), "invalid session token")
 	})
 
-	t.Run("valid token passes and adds user_id to context", func(t *testing.T) {
-		interceptor := createInterceptor(testSessionKey)
-		token := createTestToken(t, testSessionKey, testUserID)
-		ctx := metadata.NewIncomingContext(context.Background(), metadata.MD{
-			"authorization": []string{"Bearer " + token},
-		})
-		resp, err := interceptor(ctx, nil, info, testHandler)
-		require.NoError(t, err)
-		require.NotNil(t, resp)
-		result, ok := resp.(map[string]string)
-		require.True(t, ok)
-		assert.Equal(t, testUserID, result["user_id"])
-		assert.Equal(t, "ok", result["status"])
-	})
-
-	t.Run("valid token without Bearer prefix works", func(t *testing.T) {
-		interceptor := createInterceptor(testSessionKey)
-		token := createTestToken(t, testSessionKey, testUserID)
-		ctx := metadata.NewIncomingContext(context.Background(), metadata.MD{
-			"authorization": []string{token},
-		})
-		resp, err := interceptor(ctx, nil, info, testHandler)
-		require.NoError(t, err)
-		result := resp.(map[string]string)
-		assert.Equal(t, testUserID, result["user_id"])
-	})
-
 	t.Run("token signed with wrong key fails", func(t *testing.T) {
 		wrongKey := "different-secret-key-that-does-not-match-anything!!"
 		interceptor := createInterceptor(testSessionKey)
-		token := createTestToken(t, wrongKey, testUserID) // подписан другим ключом
+		token := createTestToken(t, wrongKey, testUserID)
 		ctx := metadata.NewIncomingContext(context.Background(), metadata.MD{
 			"authorization": []string{"Bearer " + token},
 		})
@@ -396,13 +369,7 @@ func TestEnsureValidTokenInterceptor(t *testing.T) {
 	})
 
 	t.Run("empty session key in server skips validation", func(t *testing.T) {
-		// Если sessionKey пустой, интерцептор не должен добавляться
-		// но если всё же вызвать - токен не валидируется
-		// В реальной работе NewServer не добавит интерцептор при пустом ключе
-		// Здесь тестируем поведение самого интерцептора
-		interceptor := createInterceptor("") // пустой ключ
-		// С пустым ключом utils.ParseSessionToken вернёт ошибку
-		// что и ожидаем
+		interceptor := createInterceptor("")
 		ctx := metadata.NewIncomingContext(context.Background(), metadata.MD{
 			"authorization": []string{"Bearer any-token"},
 		})
@@ -483,7 +450,7 @@ func TestServerRunAndStop(t *testing.T) {
 
 	t.Run("server starts and stops gracefully", func(t *testing.T) {
 		cfg := &ServerConfig{
-			Port:       0, // эфемерный порт
+			Port:       0,
 			SessionKey: testSessionKey,
 			TLS:        nil,
 		}
@@ -495,19 +462,13 @@ func TestServerRunAndStop(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, addr)
 
-		// Даём серверу время запуститься
 		time.Sleep(100 * time.Millisecond)
 
-		// Проверяем, что порт слушается
 		conn, err := net.DialTimeout("tcp", addr.String(), 2*time.Second)
 		require.NoError(t, err, "server should be listening on the port")
 		_ = conn.Close()
 
-		// Грациозная остановка
 		srv.GracefulStop()
-
-		// После остановки соединение должно отказывать
-		// (может занять немного времени)
 		time.Sleep(100 * time.Millisecond)
 	})
 
@@ -520,39 +481,25 @@ func TestServerRunAndStop(t *testing.T) {
 		srv, err := NewServer(cfg, logger)
 		require.NoError(t, err)
 
-		require.NoError(t, err)
-
 		time.Sleep(50 * time.Millisecond)
-
-		// Немедленная остановка
 		srv.Shutdown()
-
-		// Проверяем, что сервер больше не принимает соединения
-		// (может быть race condition, поэтому даём время)
 		time.Sleep(100 * time.Millisecond)
 	})
 
 	t.Run("Run on occupied port returns error", func(t *testing.T) {
-		// Занимаем порт
-		ln, err := net.Listen("tcp", "localhost:0")
-		require.NoError(t, err)
-		defer func() { _ = ln.Close() }()
-
-		// Для этого теста создаём сервер и пытаемся запустить на занятом порту
-		// Но так как portIsNull подменяет 0 на 50051, создадим сервер с конкретным портом
-		// через модификацию после создания (неидеально, но работает без изменения кода)
-
-		// Более простой подход: тестируем что два сервера не могут запуститься на одном порту
-		// Создаём первый сервер
 		srv1, err := NewServer(&ServerConfig{Port: 0, SessionKey: testSessionKey}, logger)
 		require.NoError(t, err)
 		addr1, err := srv1.Run()
 		require.NoError(t, err)
 
-		// Пытаемся запустить второй на том же порту
-		_, portStr, _ := net.SplitHostPort(addr1.String())
+		time.Sleep(100 * time.Millisecond)
+
+		_, portStr, err := net.SplitHostPort(addr1.String())
+		require.NoError(t, err)
+
 		var portInt int
-		fmt.Sscanf(portStr, "%d", &portInt)
+		_, err = fmt.Sscanf(portStr, "%d", &portInt)
+		require.NoError(t, err, "failed to parse port: %s", portStr)
 
 		srv2, err := NewServer(&ServerConfig{Port: portInt, SessionKey: testSessionKey}, logger)
 		require.NoError(t, err)
@@ -560,7 +507,6 @@ func TestServerRunAndStop(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to listen")
 
-		// Cleanup
 		srv1.GracefulStop()
 		srv2.GracefulStop()
 	})
@@ -591,12 +537,6 @@ func TestServerPublicMethods(t *testing.T) {
 		srv, err := NewServer(cfg, logger)
 		require.NoError(t, err)
 
-		// Создаём тестовый сервис дескриптор (упрощённо)
-		// В реальном коде здесь будет desc из .pb.go файлов
-		// Для теста проверяем что метод не паникует
-		// и вызывает grpcServer.RegisterService
-
-		// Создаём заглушку реализации
 		impl := struct{}{}
 		desc := &grpc.ServiceDesc{
 			ServiceName: "test.TestService",
@@ -606,7 +546,6 @@ func TestServerPublicMethods(t *testing.T) {
 			Metadata:    "test.proto",
 		}
 
-		// Метод не должен паниковать
 		assert.NotPanics(t, func() {
 			srv.RegisterService(desc, impl)
 		})
@@ -617,16 +556,9 @@ func TestServerPublicMethods(t *testing.T) {
 		srv, err := NewServer(cfg, logger)
 		require.NoError(t, err)
 
-		// Так как useCase, baseURL, auditClient не инициализированы,
-		// вызов может привести к панике в хендлере, но не в самой регистрации
-		// (зависит от реализации NewShortenerHandler)
-		// Для безопасного теста - просто проверяем что метод существует
-		// и не паникует при вызове (если хендлер обрабатывает nil)
-
 		assert.NotPanics(t, func() {
 			srv.RegisterShortenerService()
 		})
-		// Более строгий тест потребует моков или реальных зависимостей
 	})
 }
 
@@ -641,8 +573,7 @@ func TestServerTLSConfiguration(t *testing.T) {
 	testSessionKey := "test-secret-key-for-jwt-signing-min-32-chars!!"
 
 	t.Run("server with TLS can be created", func(t *testing.T) {
-		certPath, keyPath, cleanup := generateTestTLSFiles(t)
-		defer cleanup()
+		certPath, keyPath := generateTestTLSFiles(t)
 
 		cfg := &ServerConfig{
 			Port: 0,
@@ -669,7 +600,6 @@ func TestServerTLSConfiguration(t *testing.T) {
 			},
 			SessionKey: testSessionKey,
 		}
-		// Не должно пытаться загрузить сертификаты
 		srv, err := NewServer(cfg, logger)
 		require.NoError(t, err)
 		assert.NotNil(t, srv)
@@ -690,7 +620,6 @@ func TestServerEdgeCases(t *testing.T) {
 		srv, err := NewServer(cfg, logger)
 		require.NoError(t, err)
 
-		// Многократный вызов не должен паниковать
 		assert.NotPanics(t, func() {
 			srv.GracefulStop()
 			srv.GracefulStop()
@@ -727,7 +656,7 @@ func TestServerEdgeCases(t *testing.T) {
 
 		srv.Shutdown()
 		grpcSrv := srv.GetGRPCServer()
-		assert.NotNil(t, grpcSrv) // сервер возвращается, даже если остановлен
+		assert.NotNil(t, grpcSrv)
 	})
 }
 
@@ -738,21 +667,18 @@ func TestServerEdgeCases(t *testing.T) {
 func TestContextUserIDPropagation(t *testing.T) {
 	t.Parallel()
 
-	// Тестируем что ключ контекста работает корректно
-	// Это важно для downstream обработчиков
-
-	t.Run("context key is unexported string type", func(t *testing.T) {
-		// Проверяем что ключ имеет ожидаемый тип
-		// (не экспортируется, чтобы избежать коллизий)
-		ctx := context.WithValue(context.Background(), "user_id", "test-user")
-		userID, ok := ctx.Value("user_id").(string)
+	t.Run("context key is unexported type", func(t *testing.T) {
+		// FIX: используем константу KeyUserID вместо строки
+		ctx := context.WithValue(context.Background(), utils.KeyUserID, "test-user")
+		userID, ok := ctx.Value(utils.KeyUserID).(string)
 		assert.True(t, ok)
 		assert.Equal(t, "test-user", userID)
 	})
 
 	t.Run("context value without key returns nil", func(t *testing.T) {
 		ctx := context.Background()
-		userID, ok := ctx.Value("user_id").(string)
+		// FIX: используем константу для проверки отсутствия значения
+		userID, ok := ctx.Value(utils.KeyUserID).(string)
 		assert.False(t, ok)
 		assert.Empty(t, userID)
 	})

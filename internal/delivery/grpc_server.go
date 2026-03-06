@@ -118,13 +118,15 @@ func (s *ServerGRPC) ensureValidToken() grpc.UnaryServerInterceptor {
 			return nil, status.Errorf(codes.Unauthenticated, "invalid session token: %v", err)
 		}
 
-		keyUserID := string(utils.KeyUserID)
-
+		userID, ok := ctx.Value(utils.KeyUserID).(string)
+		if !ok {
+			return nil, status.Errorf(codes.Unauthenticated, "invalid user ID")
+		}
 		// Добавляем UserID из claims в контекст для downstream-обработчиков
-		ctxWithUser := context.WithValue(ctx, keyUserID, claims.UserID)
+		ctxWithUser := context.WithValue(ctx, userID, claims.UserID)
 
 		logger.Debug("JWT authentication successful",
-			zap.String(keyUserID, claims.UserID),
+			zap.String(userID, claims.UserID),
 		)
 
 		// Выполняем обработчик с обновлённым контекстом
