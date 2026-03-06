@@ -311,7 +311,7 @@ func TestEnsureValidTokenInterceptor(t *testing.T) {
 
 	// Простой тестовый хендлер
 	testHandler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		userID, ok := ctx.Value(KeyUserID).(string)
+		userID, ok := ctx.Value("user_id").(string)
 		if !ok {
 			return nil, status.Error(codes.Internal, "user_id not in context")
 		}
@@ -744,15 +744,15 @@ func TestContextUserIDPropagation(t *testing.T) {
 	t.Run("context key is unexported string type", func(t *testing.T) {
 		// Проверяем что ключ имеет ожидаемый тип
 		// (не экспортируется, чтобы избежать коллизий)
-		ctx := context.WithValue(context.Background(), KeyUserID, "test-user")
-		userID, ok := ctx.Value(KeyUserID).(string)
+		ctx := context.WithValue(context.Background(), "user_id", "test-user")
+		userID, ok := ctx.Value("user_id").(string)
 		assert.True(t, ok)
 		assert.Equal(t, "test-user", userID)
 	})
 
 	t.Run("context value without key returns nil", func(t *testing.T) {
 		ctx := context.Background()
-		userID, ok := ctx.Value(KeyUserID).(string)
+		userID, ok := ctx.Value("user_id").(string)
 		assert.False(t, ok)
 		assert.Empty(t, userID)
 	})
