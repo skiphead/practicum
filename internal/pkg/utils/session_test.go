@@ -32,7 +32,10 @@ func TestCreateNewSession_SetsCookie(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotEmpty(t, userID)
 
-	cookies := w.Result().Cookies()
+	resp := w.Result()
+	defer resp.Body.Close()
+
+	cookies := resp.Cookies()
 	assert.Len(t, cookies, 1)
 	assert.Equal(t, SessionCookieName, cookies[0].Name)
 	assert.True(t, cookies[0].HttpOnly)
