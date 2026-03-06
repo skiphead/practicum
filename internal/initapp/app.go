@@ -267,7 +267,7 @@ func (a *App) initGRPCServer(storageUseCase usecase.URLUseCase) error {
 		zap.String("service", "ShortenerService"),
 	)
 
-	authHandler := handler.NewAuthHandler(a.audit, a.logger)
+	authHandler := handler.NewAuthHandler(a.audit, a.cfg.SessionKey, a.logger)
 
 	pb.RegisterAuthServiceServer(grpcSrv.GetGRPCServer(), authHandler)
 	a.logger.Info("gRPC auth service registered", zap.String("service", "AuthService"))

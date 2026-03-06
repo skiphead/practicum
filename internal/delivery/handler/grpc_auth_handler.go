@@ -16,12 +16,14 @@ import (
 type Auth struct {
 	pb.UnimplementedAuthServiceServer
 	auditClient audit.Logger
+	sessionKey  string
 	logger      *zap.Logger
 }
 
-func NewAuthHandler(auditClient *audit.Adapter, logger *zap.Logger) pb.AuthServiceServer {
+func NewAuthHandler(auditClient *audit.Adapter, sessionKey string, logger *zap.Logger) pb.AuthServiceServer {
 	return &Auth{
 		auditClient: auditClient,
+		sessionKey:  sessionKey,
 		logger:      logger,
 	}
 }
@@ -31,7 +33,7 @@ func (h *Auth) CreateToken(_ context.Context, req *pb.CreateTokenRequest) (*pb.C
 		return &pb.CreateTokenResponse{}, status.Error(codes.InvalidArgument, "invalid user id")
 	}
 
-	cfg := TokenConfig{SessionKey: ""}
+	cfg := TokenConfig{SessionKey: h.sessionKey}
 
 	token, err := utils.GenerateSessionToken(req.GetUserId(), utils.TokenConfig(cfg))
 	if err != nil {
