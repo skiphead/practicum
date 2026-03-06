@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/skiphead/practicum/internal/audit"
 	"github.com/skiphead/practicum/internal/pkg/utils"
 	pb "github.com/skiphead/practicum/pkg/api/v1/gen"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type Auth struct {
