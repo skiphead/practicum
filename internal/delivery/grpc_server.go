@@ -108,7 +108,7 @@ func (s *ServerGRPC) ensureValidToken() grpc.UnaryServerInterceptor {
 		}
 
 		// Валидируем JWT-токен через utilits
-		cfg := utils.TokenConfig{SessionKey: ""}
+		cfg := utils.TokenConfig{SessionKey: s.sessionKey}
 		claims, err := utils.ParseSessionToken(tokenString, cfg)
 		if err != nil {
 			logger.Warn("JWT validation failed",
