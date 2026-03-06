@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/skiphead/practicum/internal/pkg/utils"
 	"go.uber.org/zap"
 )
 
@@ -168,7 +169,7 @@ func (h *URLHandler) handleConflictError(w http.ResponseWriter, err error) bool 
 // GetUserIDFromContext — хелпер для извлечения UserID из контекста в обработчиках.
 // Можно использовать в handler-пакете.
 func GetUserIDFromContext(ctx context.Context) (string, bool) {
-	userID, ok := ctx.Value("user_id").(string)
+	userID, ok := ctx.Value(utils.KeyUserID).(string)
 
 	return userID, ok
 }
