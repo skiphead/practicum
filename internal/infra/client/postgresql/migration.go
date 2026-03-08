@@ -34,7 +34,7 @@ func (r RealGooseWrapper) Up(db *sql.DB, dir string) error {
 }
 
 // MigrationsWithDI runs migrations with dependency injection for testing
-func MigrationsWithDI(db *sql.DB, migrationDir string, gooseWrapper GooseWrapper, fs fs.FS) error {
+func MigrationsWithDI(db *sql.DB, gooseWrapper GooseWrapper, fs fs.FS) error {
 	gooseWrapper.SetBaseFS(fs)
 
 	if err := gooseWrapper.SetDialect("postgres"); err != nil {
@@ -51,7 +51,7 @@ func MigrationsWithDI(db *sql.DB, migrationDir string, gooseWrapper GooseWrapper
 
 // Migrations runs database migrations from the specified directory
 func Migrations(db *sql.DB, migrationDir string) error {
-	fs := os.DirFS(migrationDir)
+	fsDir := os.DirFS(migrationDir)
 	wrapper := RealGooseWrapper{}
-	return MigrationsWithDI(db, migrationDir, wrapper, fs)
+	return MigrationsWithDI(db, wrapper, fsDir)
 }

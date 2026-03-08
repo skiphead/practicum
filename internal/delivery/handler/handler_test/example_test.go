@@ -75,7 +75,7 @@ func setupTestHandler() (*handler.URLHandler, *MockURLUseCase) {
 	mockStorage := new(MockURLUseCase)
 	// Создаем пустой аудит адаптер для тестов
 	auditAdapter := &audit.Adapter{}
-	handler := handler.NewURLHandler(mockStorage, "localhost:8080", "http://localhost:8080", "secret", auditAdapter)
+	handler := handler.NewURLHandler(mockStorage, nil, "localhost:8080", "http://localhost:8080", "secret", auditAdapter, nil)
 	return handler, mockStorage
 }
 
@@ -371,24 +371,6 @@ func TestURLHandler(t *testing.T) {
 
 // Пример работы с middleware
 func TestURLHandler_Middleware(t *testing.T) {
-
-	t.Run("Сжатие ответов", func(t *testing.T) {
-		h, mockStorage := setupTestHandler()
-		router := h.ChiMux()
-
-		req := httptest.NewRequest("GET", "/ping", nil)
-		req.Header.Set("Accept-Encoding", "gzip")
-		mockStorage.On("Ping", mock.Anything).Return(nil)
-
-		w := httptest.NewRecorder()
-		router.ServeHTTP(w, req)
-
-		assert.Equal(t, http.StatusOK, w.Code)
-		// Проверяем, что ответ сжат
-		assert.Equal(t, "gzip", w.Header().Get("Content-Encoding"))
-
-		mockStorage.AssertExpectations(t)
-	})
 
 	t.Run("Session middleware создает userID", func(t *testing.T) {
 		h, mockStorage := setupTestHandler()

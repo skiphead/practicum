@@ -1,5 +1,5 @@
 // Package usecase implements the business logic layer for the URL shortening service.
-// It orchestrates operations between domain entities and repositories, providing
+// It orchestrates operations between domain entity and repository, providing
 // fallback mechanisms, batch processing, and transaction management for reliable URL operations.
 package usecase
 
@@ -7,20 +7,17 @@ import (
 	"context"
 	"fmt"
 
+	"time"
+
 	"github.com/skiphead/practicum/internal/domain/entity"
 	"github.com/skiphead/practicum/internal/domain/repository"
-	"github.com/skiphead/practicum/pkg/utils"
-
-	"time"
+	"github.com/skiphead/practicum/internal/pkg/utils"
 
 	"go.uber.org/zap"
 )
 
 // Batch size for database operations to optimize performance.
 const batchSize = 100
-
-// ErrDuplicateURL indicates that a URL already exists in the system.
-var ErrDuplicateURL = fmt.Errorf("duplicate URL")
 
 // URLUseCase defines the business logic interface for URL shortening operations.
 // It provides methods for URL management, batch operations, and fallback handling.
@@ -201,7 +198,7 @@ func (uc *urlUseCase) Get(ctx context.Context, shortCode string) (*entity.ShortU
 //   - userID: User ID to search for
 //
 // Returns:
-//   - []entity.ShortURL: Slice of URL entities belonging to the user
+//   - []entity.ShortURL: Slice of URL entity belonging to the user
 //   - error: Storage error if retrieval fails
 func (uc *urlUseCase) GetByUserID(ctx context.Context, userID string) ([]entity.ShortURL, error) {
 	if !uc.isDatabaseAvailable(ctx) {

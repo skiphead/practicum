@@ -217,7 +217,7 @@ func (s *cachedFileStorage) Save(userID, correlationID, key, url string) error {
 //
 // Parameters:
 //   - ctx: Context for timeout and cancellation
-//   - in: Slice of ShortURL entities to save
+//   - in: Slice of ShortURL entity to save
 //
 // Returns:
 //   - error: If file write fails
@@ -515,8 +515,14 @@ func (s *cachedFileStorage) CompactFile() error {
 		return fmt.Errorf("error creating temp file: %w", err)
 	}
 	defer func() {
-		tempFile.Close()
-		os.Remove(tempPath) // Clean up temp file on error
+		err = tempFile.Close()
+		if err != nil {
+			return
+		}
+		err = os.Remove(tempPath)
+		if err != nil {
+			return
+		} // Clean up temp file on error
 	}()
 
 	writer := bufio.NewWriter(tempFile)

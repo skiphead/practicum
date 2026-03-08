@@ -1,0 +1,39 @@
+edition = "2023";
+
+package shortener;
+
+option go_package = "github.com/skiphead/practicum/pkg/api/v1/proto";
+
+service ShortenerService {
+  rpc CreateURLShorten (CreateURLShortenRequest) returns (CreateURLShortenResponse);
+  rpc ExpandURL (URLExpandRequest) returns (URLExpandResponse);
+  rpc ListUserURLs (ListUserURLsRequest) returns (ListUserURLsResponse);
+}
+
+message CreateURLShortenRequest {
+  string original_url = 1;
+}
+
+message CreateURLShortenResponse {
+  string short_url = 1;
+}
+
+message URLExpandRequest {
+  string short_code = 1;
+}
+
+message URLExpandResponse {
+  string original_url = 1;
+}
+
+
+message ListUserURLsRequest {}
+
+message ListUserURLsResponse {
+  repeated URLData url = 1;
+}
+
+message URLData {
+  string short_url = 1;
+  string original_url = 2;
+}

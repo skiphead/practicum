@@ -114,7 +114,10 @@ func ResetInstances() {
 	defer mu.Unlock()
 
 	for filePath, instance := range instances {
-		instance.file.Close()
+		err := instance.file.Close()
+		if err != nil {
+			return
+		}
 		delete(instances, filePath)
 	}
 }
@@ -198,7 +201,10 @@ func (l *Logger) Reopen() error {
 
 	// Close old file
 	if l.file != nil {
-		l.file.Close()
+		err := l.file.Close()
+		if err != nil {
+			return err
+		}
 	}
 
 	// Reopen file

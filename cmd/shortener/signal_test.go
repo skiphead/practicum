@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/skiphead/practicum/infra/config"
 	"github.com/skiphead/practicum/internal/delivery"
+	"github.com/skiphead/practicum/internal/infra/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"

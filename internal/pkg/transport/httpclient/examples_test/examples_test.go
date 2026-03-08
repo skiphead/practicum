@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/skiphead/practicum/pkg/transport/httpclient"
+	"github.com/skiphead/practicum/internal/pkg/transport/httpclient"
 )
 
 // Example of creating a client with default configuration

@@ -7,8 +7,7 @@ import (
 	"testing"
 
 	"github.com/skiphead/practicum/internal/domain/entity"
-	"github.com/skiphead/practicum/pkg/utils"
-
+	"github.com/skiphead/practicum/internal/pkg/utils"
 	"github.com/stretchr/testify/mock"
 )
 

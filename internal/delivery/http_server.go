@@ -6,15 +6,16 @@ package delivery
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/skiphead/practicum/internal/infra/config"
 	"go.uber.org/zap"
 
 	_ "net/http/pprof" // Import pprof for profiling endpoints
-
-	"github.com/skiphead/practicum/infra/config"
 )
 
 // Server represents an HTTP server with Chi router and graceful shutdown capabilities.
@@ -48,8 +49,9 @@ func NewServerChi(cfg *config.Config, mux *chi.Mux) (*Server, error) {
 		return nil, err
 	}
 
-	if cfg.PprofPort == "" {
-		cfg.PprofPort = ":8081"
+	pprofPort := cfg.PprofPort
+	if pprofPort == "" {
+		pprofPort = ":8081"
 	}
 
 	return &Server{
@@ -61,8 +63,8 @@ func NewServerChi(cfg *config.Config, mux *chi.Mux) (*Server, error) {
 			IdleTimeout:  60 * time.Second,
 		},
 		pprofServer: &http.Server{
-			Addr:         cfg.PprofPort, // Pprof server on fixed port
-			Handler:      nil,           // Use default http.DefaultServeMux
+			Addr:         pprofPort, // Pprof server port from config with fallback
+			Handler:      nil,       // Use default http.DefaultServeMux
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
 		},
@@ -73,51 +75,50 @@ func NewServerChi(cfg *config.Config, mux *chi.Mux) (*Server, error) {
 }
 
 // Start begins listening for HTTP requests on the configured address.
-// It also starts a separate pprof profiler server on port 8081 for debugging.
+// It also starts a separate pprof profiler server for debugging.
 // The method returns a channel that will receive any server errors.
 //
 // Returns:
-//   - <-chan error: Channel that emits server errors (buffered, capacity 2)
-//     The channel is closed when both servers stop gracefully.
-//
-// The method runs two servers concurrently:
-// 1. Main application server on the configured address
-// 2. pprof profiling server on port 8081 (for debugging/profiling)
-//
-// Note: The pprof server provides profiling endpoints at /debug/pprof/
+//   - <-chan error: Channel that emits server errors (buffered, capacity 1)
+//     The channel is closed when both servers stop, either by error or shutdown.
 func (s *Server) Start() <-chan error {
-	serverError := make(chan error, 2) // Buffer for both servers
+	serverError := make(chan error, 1) // Емкость 1 достаточна для первой критической ошибки
+	var wg sync.WaitGroup
+	wg.Add(2)
 
-	// Start pprof profiling server on port 8081
+	// Pprof server
 	go func() {
-		zap.L().Info("Starting pprof server", zap.String("addr", s.pprofServer.Addr))
+		defer wg.Done()
 		err := s.pprofServer.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverError <- err
+			select {
+			case serverError <- err: // Неблокирующая отправка
+			default: // Канал уже содержит ошибку — игнорируем
+			}
 		}
 	}()
 
-	// Start main application server
+	// Main server
 	go func() {
-		zap.L().Info("Starting main server", zap.String("addr", s.Server.Addr))
+		defer wg.Done()
 		var err error
 		if s.tlsEnabled {
 			err = s.Server.ListenAndServeTLS(s.pathCert, s.pathKey)
 		} else {
 			err = s.Server.ListenAndServe()
 		}
-
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverError <- err
+			select {
+			case serverError <- err:
+			default:
+			}
 		}
 	}()
 
-	// Goroutine to close error channel when both servers are done
+	// Coordinator: закрываем канал после завершения обоих серверов
 	go func() {
-		// Wait a bit to ensure both servers have time to start
-		time.Sleep(100 * time.Millisecond)
-		// We don't close the channel immediately because servers run indefinitely
-		// The channel will be closed in Shutdown method
+		wg.Wait()
+		close(serverError)
 	}()
 
 	return serverError
@@ -144,19 +145,22 @@ func (s *Server) Shutdown(timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	zap.L().Info("Shutting down main server", zap.String("addr", s.Server.Addr))
+	var mainErr, pprofErr error
 
-	// Shutdown main server
-	mainErr := s.Server.Shutdown(ctx)
-
-	// Shutdown pprof server
-	zap.L().Info("Shutting down pprof server", zap.String("addr", s.pprofServer.Addr))
-	pprofErr := s.pprofServer.Shutdown(ctx)
-
-	if mainErr != nil {
-		return mainErr
+	if err := s.Server.Shutdown(ctx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		mainErr = fmt.Errorf("main server shutdown: %w", err)
 	}
-	return pprofErr
+
+	if err := s.pprofServer.Shutdown(ctx); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		pprofErr = fmt.Errorf("pprof server shutdown: %w", err)
+	}
+
+	if mainErr == nil && pprofErr == nil {
+		zap.L().Info("Servers shut down gracefully")
+		return nil
+	}
+
+	return errors.Join(mainErr, pprofErr)
 }
 
 // GetAddr returns the address the main server is listening on.

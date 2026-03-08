@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/skiphead/practicum/pkg/transport/httpclient"
+	"github.com/skiphead/practicum/internal/pkg/transport/httpclient"
 )
 
 // Client interface defines audit service client operations.

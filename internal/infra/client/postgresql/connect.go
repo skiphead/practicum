@@ -8,8 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"os"
+	"go.uber.org/zap"
 )
 
 // ConnectionConfig contains database connection settings.
@@ -45,7 +44,10 @@ func (r *RealTCPChecker) Check(host, port string, timeout time.Duration) error {
 	if err != nil {
 		return fmt.Errorf("cannot reach %s: %w", address, err)
 	}
-	conn.Close()
+	err = conn.Close()
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -196,8 +198,7 @@ func SafeConn(config string) *pgxpool.Pool {
 func ConnWithRetry(config string, checker TCPChecker, timeout time.Duration, retryConfig RetryConfig) *pgxpool.Pool {
 	host, port, err := extractHostPort(config)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Unable to parse connection string: %v\n", err)
-		// os.Exit(1) // Commented out to allow caller to handle error
+		zap.L().Error("Unable to parse connection string", zap.Error(err))
 	}
 
 	var pool *pgxpool.Pool
@@ -229,23 +230,8 @@ func ConnWithRetry(config string, checker TCPChecker, timeout time.Duration, ret
 	}, retryConfig)
 
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Unable to establish database connection: %v\n", err)
-		// os.Exit(1) // Commented out to allow caller to handle error
+		zap.L().Fatal("Unable to establish database connection", zap.Error(err))
 	}
 
 	return pool
-}
-
-// ConnWithConfig creates a connection pool with custom settings (backward compatibility).
-// Uses default retry configuration.
-//
-// Parameters:
-//   - config: PostgreSQL connection string
-//   - checker: TCPChecker implementation
-//   - timeout: Connection timeout
-//
-// Returns:
-//   - *pgxpool.Pool: Connection pool or nil if connection fails
-func ConnWithConfig(config string, checker TCPChecker, timeout time.Duration) *pgxpool.Pool {
-	return ConnWithRetry(config, checker, timeout, DefaultRetryConfig())
 }

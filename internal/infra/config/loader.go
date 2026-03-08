@@ -9,26 +9,38 @@ import (
 
 const schema = "http" // Default URL scheme for shortened URLs
 
-// LoadConfig loads and merges configuration from multiple sources with precedence:
+// LoadConfig loads and merges configuration from multiple sources with the following precedence:
 // 1. Command-line flags (highest priority)
 // 2. Environment variables
-// 3. YAML configuration file
+// 3. JSON configuration file
 // 4. Default values (lowest priority)
 //
 // Parameters:
-//   - configPath: Path to YAML configuration file (optional)
+//   - configPath: Path to JSON configuration file (optional, can be empty string)
 //
 // Returns:
-//   - *Config: Fully resolved configuration with defaults filled in
-//   - error: If YAML parsing fails
+//   - *Config: Fully resolved configuration with defaults applied for missing values
+//   - error: Returns error only if JSON file exists but cannot be parsed
 //
-// Configuration sources precedence (highest to lowest):
-//  1. Command-line flags
-//  2. Environment variables
-//  3. YAML configuration file
-//  4. Default values
+// Configuration sources and their environment variable mappings:
+//   - ServerAddr: SERVER_ADDRESS (flag: -a)
+//   - BaseURL: BASE_URL (flag: -b)
+//   - DatabaseDSN: DATABASE_DSN (flag: -d)
+//   - FileStoragePath: FILE_STORAGE_PATH (flag: -f)
+//   - AuditFile: AUDIT_FILE (flag: -audit-file)
+//   - AuditURL: AUDIT_URL (flag: -audit-url)
+//   - TrustedSubnet: TRUSTED_SUBNET (flag: -t)
+//   - EnableTLS: HTTPS (flag: -s) or IsHTTPSSEnabled() function result
 //
-// The function also ensures all required fields have sensible defaults.
+// Default values applied when no other source provides a value:
+//   - ServerAddr: "localhost:8080"
+//   - BaseURL: "http://" + ServerAddr
+//   - DatabaseDSN: "user=postgres password=postgres host=localhost port=5432 database=pgx_test sslmode=disable"
+//   - FileStoragePath: "data.json"
+//
+// Note: The function expects a JSON configuration file, not YAML as previously
+// documented. Command-line flags always override environment variables and
+// file configuration, while environment variables override file configuration.
 func LoadConfig(configPath string) (*Config, error) {
 	config := &Config{}
 
@@ -41,7 +53,7 @@ func LoadConfig(configPath string) (*Config, error) {
 
 	// Define command-line flags
 	var flagServerAddr, flagBaseURL, flagFileStoragePath,
-		flagDataBaseDSN, flagAuditFile, flagAuditURL string
+		flagDataBaseDSN, flagAuditFile, flagAuditURL, flagTrustedSubnet string
 	var flagTLS bool
 	flag.StringVar(&flagServerAddr, "a", "", "Port for server startup")
 	flag.StringVar(&flagBaseURL, "b", "", "Base address for shortened URLs")
@@ -49,11 +61,15 @@ func LoadConfig(configPath string) (*Config, error) {
 	flag.StringVar(&flagFileStoragePath, "f", "", "Path to file storage")
 	flag.StringVar(&flagAuditFile, "audit-file", "", "Path to audit log file")
 	flag.StringVar(&flagAuditURL, "audit-url", "", "Full URL of remote audit log receiver")
+	flag.StringVar(&flagTrustedSubnet, "t", "", "Trusted subnet")
 	flag.BoolVar(&flagTLS, "s", false, "Enable TLS on HTTP server")
 
 	flag.Parse()
 
 	// Apply command-line flags (highest priority)
+	if flagTrustedSubnet != "" {
+		config.TrustedSubnet = flagTrustedSubnet
+	}
 	if flagTLS {
 		config.EnableTLS = true
 	}
@@ -77,6 +93,10 @@ func LoadConfig(configPath string) (*Config, error) {
 	if IsHTTPSSEnabled() {
 		config.EnableTLS = true
 	}
+	if env := os.Getenv("TRUSTED_SUBNET"); env != "" {
+		config.TrustedSubnet = env
+	}
+
 	if env := os.Getenv("BASE_URL"); env != "" {
 		config.BaseURL = env
 	}
@@ -97,10 +117,6 @@ func LoadConfig(configPath string) (*Config, error) {
 	}
 
 	// Set defaults for empty fields (lowest priority)
-	if config.DatabaseDSN == "" {
-		config.DatabaseDSN = "user=postgres password=postgres host=localhost port=5432 database=pgx_test sslmode=disable"
-	}
-
 	if config.ServerAddr == "" {
 		config.ServerAddr = "localhost:8080"
 	}
